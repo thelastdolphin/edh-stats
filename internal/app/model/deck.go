@@ -1,7 +1,7 @@
 package model
 
-type deck struct {
-	deckId   int
-	deckname string
-	decklist string
+type Deck struct {
+	Deckid   int
+	Deckname string
+	Decklist string
 }
