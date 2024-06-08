@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"github.com/jackc/pgx/v4"
+	"github.com/pkg/errors"
 )
 
 type pgxIface interface {
@@ -15,6 +16,21 @@ type Store struct {
 	db               pgxIface
 	playerRepository *PlayerRepository
 	deckRepository   *DeckRepository
+}
+
+type DbMethods struct{}
+
+func (d *DbMethods) QueryRow(ctx context.Context, s string) pgx.Row {
+	r := QueryRow(ctx, s)
+	return r
+}
+
+func (d *DbMethods) Close(iface pgxIface, ctx context.Context) error {
+	err := iface.Close(ctx)
+	if err != nil {
+		return errors.Cause(err)
+	}
+	return nil
 }
 
 func (s *Store) Player() *PlayerRepository {
