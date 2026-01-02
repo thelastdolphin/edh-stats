@@ -1,7 +1,8 @@
 package model
 
 type Deck struct {
-	Deckid   int
-	Deckname string
-	Decklist string
+	ID    int
+	Name  string
+	Owner string
+	Type  string
 }

@@ -2,47 +2,38 @@ package storage
 
 import (
 	"context"
-	"github.com/jackc/pgx/v4"
-	"github.com/pkg/errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
-type pgxIface interface {
-	QueryRow(context.Context, string, ...interface{}) pgx.Row
-	Close(ctx context.Context) error
-}
-
 type Store struct {
-	dbConfig         *string
-	db               pgxIface
-	playerRepository *PlayerRepository
-	deckRepository   *DeckRepository
+	db             *pgxpool.Pool
+	deckRepository *DeckRepository
 }
 
-type DbMethods struct{}
+func NewStore(ctx context.Context, connString string) (*Store, error) {
 
-func (d *DbMethods) QueryRow(ctx context.Context, s string) pgx.Row {
-	r := QueryRow(ctx, s)
-	return r
-}
-
-func (d *DbMethods) Close(iface pgxIface, ctx context.Context) error {
-	err := iface.Close(ctx)
+	db, err := pgxpool.Connect(ctx, connString)
 	if err != nil {
-		return errors.Cause(err)
+		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
-	return nil
-}
 
-func (s *Store) Player() *PlayerRepository {
-	if s.playerRepository == nil {
-		s.playerRepository = &PlayerRepository{}
+	store := &Store{
+		db: db,
 	}
-	return s.playerRepository
+
+	store.deckRepository = &DeckRepository{db: db}
+
+	return store, nil
 }
 
 func (s *Store) Deck() *DeckRepository {
-	if s.deckRepository == nil {
-		s.deckRepository = &DeckRepository{}
-	}
 	return s.deckRepository
+}
+
+func (s *Store) Close() {
+	if s.db != nil {
+		s.db.Close()
+	}
 }
