@@ -4,27 +4,29 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v4/pgxpool"
+	"database/sql"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Store struct {
-	db             *pgxpool.Pool
+	db             *sql.DB
 	deckRepository *DeckRepository
 }
 
-func NewStore(ctx context.Context, connString string) (*Store, error) {
+func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 
-	db, err := pgxpool.Connect(ctx, connString)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
 
-	store := &Store{
-		db: db,
+	if _, err := db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		return nil, fmt.Errorf("failed to enable foreign keys %v", err)
 	}
 
+	store := &Store{db: db}
 	store.deckRepository = &DeckRepository{db: db}
-
 	return store, nil
 }
 

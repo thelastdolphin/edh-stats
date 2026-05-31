@@ -1,7 +1,7 @@
 package model
 
 type Deck struct {
-	ID    int
+	ID    int64
 	Name  string
 	Owner string
 	Type  string

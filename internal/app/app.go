@@ -16,7 +16,7 @@ import (
 )
 
 type Config struct {
-	Dbstring      string
+	DbPath        string
 	ServerAddress string
 }
 
@@ -42,7 +42,7 @@ func parseQueryInt(q url.Values, key string, defaultValue int) int {
 func New(cfg *Config) (*Application, error) {
 	app := &Application{config: cfg}
 
-	store, err := storage.NewStore(context.Background(), cfg.Dbstring)
+	store, err := storage.NewStore(context.Background(), cfg.DbPath)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create storage: %w", err)
 	}
@@ -50,7 +50,7 @@ func New(cfg *Config) (*Application, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("POST /decks", create.Deck)
+	mux.HandleFunc("POST /decks", create.Deck(store))
 	mux.HandleFunc("GET /decks/{id}", app.GetDeck)
 	mux.HandleFunc("GET /decks", app.ListDecks)
 

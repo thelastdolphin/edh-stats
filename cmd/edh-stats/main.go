@@ -9,7 +9,7 @@ import (
 func main() {
 
 	cfg := &app.Config{
-		Dbstring:      "postgresql://tld94:m1sf1ts@localhost:5432/edhstats?sslmode=disable",
+		DbPath:        "./data/edh_stats.db",
 		ServerAddress: "localhost:8080",
 	}
 
