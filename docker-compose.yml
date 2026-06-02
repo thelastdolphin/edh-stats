@@ -1,0 +1,12 @@
+services:
+  edh-stats:
+    build: .
+    container_name: edh-stats
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./migrations:/app/migrations
+    environment:
+      - DB_PATH=/app/data/edh_stats.db

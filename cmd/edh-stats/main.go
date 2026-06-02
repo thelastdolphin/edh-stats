@@ -10,7 +10,7 @@ func main() {
 
 	cfg := &app.Config{
 		DbPath:        "./data/edh_stats.db",
-		ServerAddress: "localhost:8080",
+		ServerAddress: ":8080",
 	}
 
 	application, err := app.New(cfg)
