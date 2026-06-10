@@ -15,6 +15,7 @@ import (
 
 func Deck(store *storage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("CreateDeck called with path: %s, method: %s", r.URL.Path, r.Method)
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return

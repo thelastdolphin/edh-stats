@@ -14,6 +14,7 @@ import (
 
 func GetDeck(store *storage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("GetDeck called with path: %s, method: %s", r.URL.Path, r.Method)
 		deckId := r.PathValue("id")
 
 		if len(deckId) <= 0 {
