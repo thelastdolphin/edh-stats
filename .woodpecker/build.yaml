@@ -1,0 +1,19 @@
+when:
+  - event: push
+    branch: main
+
+steps:
+  - name: build-binary
+    image: golang:1.26
+    commands:
+      - echo "Building service binary:"
+      - ../make pi
+      - cp edh-stats /tmp/edh-stats
+
+  - name: build-docker
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      dockerfile: Dockerfile
+      context: .
+      platforms: linux/arm64,linux/amd64
+      load: true
