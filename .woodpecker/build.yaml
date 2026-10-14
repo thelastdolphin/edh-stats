@@ -47,7 +47,12 @@ steps:
           StrictHostKeyChecking no
         EOF
       - ssh-keyscan -H 192.168.88.141 >> ~/.ssh/known_hosts 2>/dev/null
-      - ssh tld94@192.168.88.141 "..."
+      - |
+        ssh tld94@192.168.88.141 "
+          cd ~/edh-stats &&
+          docker compose pull edh-stats &&
+          docker compose up -d --force-recreate edh-stats
+        "
     depends_on:
       - build-docker
     when:
