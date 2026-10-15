@@ -5,15 +5,23 @@ when:
   - event: manual
 
 steps:
-  # Verification. -p 1 keeps the cgo test binaries from being linked in parallel:
-  # the host is a 4 GB Raspberry Pi, and that is the step where it proved fragile.
+  # Verification, and the step that pays for a cold cache.
+  #
+  # GOFLAGS=-p=1 builds one package at a time, for both commands below. A *cold*
+  # full standard-library build is the one operation this host has repeatedly
+  # failed at (internal compiler errors, garbage relocations), and every toolchain
+  # change forces one, because the build cache is keyed by the toolchain.
+  # Incremental builds have never failed here, so the first step compiles serially
+  # and warms the shared GOCACHE volume; build-binary then runs incrementally as
+  # before. Costs time only while the cache is cold.
   - name: vet-and-test
-    image: golang:1.26
+    image: golang:1.27.2
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
+      GOFLAGS: "-p=1"
     commands:
       - go vet ./...
       # No -race here on purpose. The deploy host doubles as the CI agent, it is
@@ -23,7 +31,7 @@ steps:
       #   FATAL: Found 39 - Supported 48
       # That is a kernel/runtime limitation, not a failing test. Run `make
       # test-race` on a machine whose kernel the detector supports.
-      - go test -p 1 -count=1 -timeout 60s ./...
+      - go test -count=1 -timeout 60s ./...
     volumes:
       - /var/lib/woodpecker/cache/go:/woodpecker/cache
 
@@ -35,7 +43,7 @@ steps:
   # GOGC/GOMAXPROCS come from the original step: the host has four cores and 4 GB,
   # and GC off for a short-lived compiler avoids spending that budget on collection.
   - name: build-binary
-    image: golang:1.26
+    image: golang:1.27.2
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod
