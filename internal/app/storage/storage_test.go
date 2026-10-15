@@ -219,6 +219,58 @@ func TestDeckRepository_List_Filters(t *testing.T) {
 	}
 }
 
+func TestDeckRepository_Delete(t *testing.T) {
+	store := newTestStore(t)
+	deck := mustCreateDeck(t, store, "deck to delete", "tester", "control")
+	ctx := context.Background()
+
+	if err := store.Deck().Delete(ctx, deck.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := store.Deck().GetByID(ctx, deck.ID); !errors.Is(err, edherrors.ErrDeckNotFound) {
+		t.Errorf("deck is still readable after the delete: %v", err)
+	}
+}
+
+func TestDeckRepository_Delete_NotFound(t *testing.T) {
+	store := newTestStore(t)
+
+	err := store.Deck().Delete(context.Background(), 999999)
+	if !errors.Is(err, edherrors.ErrDeckNotFound) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrDeckNotFound", err)
+	}
+}
+
+// TestDeckRepository_Delete_InUse covers the ON DELETE RESTRICT the schema
+// declares: a deck a game still refers to must survive, and the caller sees the
+// domain error rather than a driver message.
+func TestDeckRepository_Delete_InUse(t *testing.T) {
+	store := newTestStore(t)
+	deck := mustCreateDeck(t, store, "referenced deck", "tester", "control")
+	ctx := context.Background()
+
+	result, err := store.db.ExecContext(ctx, `INSERT INTO games (notes) VALUES ('test game')`)
+	if err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	gameID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatalf("game id: %v", err)
+	}
+	if _, err := store.db.ExecContext(ctx,
+		`INSERT INTO game_deck (game_id, deck_id, result_type_id) VALUES (?, ?, 1)`,
+		gameID, deck.ID); err != nil {
+		t.Fatalf("insert game_deck: %v", err)
+	}
+
+	if err := store.Deck().Delete(ctx, deck.ID); !errors.Is(err, edherrors.ErrDeckInUse) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrDeckInUse", err)
+	}
+	if _, err := store.Deck().GetByID(ctx, deck.ID); err != nil {
+		t.Errorf("the deck disappeared despite the restriction: %v", err)
+	}
+}
+
 func TestDeckFilters_Clamp(t *testing.T) {
 	tests := []struct {
 		name       string
