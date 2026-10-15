@@ -74,7 +74,7 @@ func TestDeckRepository_GetById(t *testing.T) {
 	})
 
 	// Теперь получаем её по ID
-	got, err := repo.GetById(ctx, int(deck.ID))
+	got, err := repo.GetByID(ctx, deck.ID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
