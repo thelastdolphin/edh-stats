@@ -1,0 +1,14 @@
+# Keep the build context small and make sure local state never ends up inside the
+# image. Note that both patterns are anchored: a bare "data" would also exclude
+# packaging/data, which the Dockerfile copies.
+.git
+.idea
+/data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+deploy_key*
+*.key
+*.pem
+.env

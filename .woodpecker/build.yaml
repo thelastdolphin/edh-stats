@@ -5,6 +5,35 @@ when:
   - event: manual
 
 steps:
+  # Verification. -p 1 keeps the cgo test binaries from being linked in parallel:
+  # the host is a 4 GB Raspberry Pi, and that is the step where it proved fragile.
+  - name: vet-and-test
+    image: golang:1.26
+    environment:
+      GOCACHE: /woodpecker/cache/go-build
+      GOMODCACHE: /woodpecker/cache/go-mod
+      GOMAXPROCS: "2"
+      CGO_ENABLED: "1"
+    commands:
+      - go vet ./...
+      # No -race here on purpose. The deploy host doubles as the CI agent, it is
+      # arm64 and its kernel uses a 39-bit virtual address layout, which
+      # ThreadSanitizer refuses before a single test runs:
+      #   FATAL: ThreadSanitizer: unsupported VMA range
+      #   FATAL: Found 39 - Supported 48
+      # That is a kernel/runtime limitation, not a failing test. Run `make
+      # test-race` on a machine whose kernel the detector supports.
+      - go test -p 1 -count=1 -timeout 60s ./...
+    volumes:
+      - /var/lib/woodpecker/cache/go:/woodpecker/cache
+
+  # The binary is compiled here, in a plain container against the persistent Go
+  # cache, exactly as before the refactor. Compiling it inside the image instead
+  # (a cold standard-library build inside the plugin's nested dockerd) is what made
+  # builds fail on this machine, so that is not done any more.
+  #
+  # GOGC/GOMAXPROCS come from the original step: the host has four cores and 4 GB,
+  # and GC off for a short-lived compiler avoids spending that budget on collection.
   - name: build-binary
     image: golang:1.26
     environment:
@@ -13,12 +42,15 @@ steps:
       GOGC: "off"
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
-      CC: aarch64-linux-gnu-gcc
     commands:
       - go build -o edh-stats ./cmd/edh-stats
     volumes:
       - /var/lib/woodpecker/cache/go:/woodpecker/cache
+    depends_on:
+      - vet-and-test
 
+  # Only assembles the image out of the binary built above: no compiler, no apt, no
+  # cache export, nothing heavy on the Pi.
   - name: build-docker
     image: woodpeckerci/plugin-docker-buildx
     settings:
@@ -27,6 +59,8 @@ steps:
       tags: latest
       context: .
       dockerfile: Dockerfile
+      # Target host is arm64. Add linux/amd64 to the list to publish both.
+      platforms: linux/arm64
     depends_on:
       - build-binary
 
@@ -35,20 +69,57 @@ steps:
     environment:
       SSH_KEY:
         from_secret: deploy_ssh_key
+      DEPLOY_HOST: 192.168.88.141
+      DEPLOY_USER: tld94
+      # Публичный отпечаток host key целевой машины. Это не секрет, поэтому
+      # значение хранится прямо здесь. Пересчитать после переустановки хоста:
+      #   ssh-keyscan -t ed25519 192.168.88.141 | ssh-keygen -lf -
+      DEPLOY_HOST_FINGERPRINT: "SHA256:vpve5vHw5hbJANC8rxJbsB5KWwj99+Jd17+j3C34gao"
     commands:
       - apk add --no-cache openssh-client
       - mkdir -p ~/.ssh && echo "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+      # Host verification stays enabled: with StrictHostKeyChecking=no the deploy
+      # key would be offered to whatever happens to answer on that address. The
+      # algorithm overrides are kept only for an older sshd and can be dropped
+      # once the host offers an ed25519 host key.
       - |
         cat > ~/.ssh/config <<'EOF'
-        Host *
+        Host 192.168.88.141
           HostKeyAlgorithms +ssh-ed25519,ssh-rsa
           PubkeyAcceptedAlgorithms +ssh-ed25519,ssh-rsa
-          StrictHostKeyChecking no
+          StrictHostKeyChecking yes
         EOF
-      - ssh-keyscan -H 192.168.88.141 >> ~/.ssh/known_hosts 2>/dev/null
+      # Verify the host before trusting it, instead of trusting whatever the scan
+      # returns. Only the fingerprint needs to be filled in above.
       - |
-        ssh tld94@192.168.88.141 "
+        ssh-keyscan -H "$DEPLOY_HOST" > /tmp/host_keys 2>/dev/null
+        if [ ! -s /tmp/host_keys ]; then
+          echo "ERROR: ssh-keyscan returned no host key for $DEPLOY_HOST"
+          exit 1
+        fi
+        ssh-keygen -lf /tmp/host_keys | awk '{print $2}' | sort -u > /tmp/fingerprints
+        if [ -z "$DEPLOY_HOST_FINGERPRINT" ]; then
+          echo "WARNING: DEPLOY_HOST_FINGERPRINT is empty, trusting ssh-keyscan output (trust on first use)"
+        elif grep -qxF "$DEPLOY_HOST_FINGERPRINT" /tmp/fingerprints; then
+          echo "host key verified: $DEPLOY_HOST_FINGERPRINT"
+        else
+          echo "ERROR: host key fingerprint mismatch for $DEPLOY_HOST"
+          echo "expected: $DEPLOY_HOST_FINGERPRINT"
+          echo "received: $(tr '\n' ' ' < /tmp/fingerprints)"
+          exit 1
+        fi
+        cat /tmp/host_keys >> ~/.ssh/known_hosts
+      # The deployment directory on the host is a clone of this repository, so it
+      # is checked out to the exact revision whose image was just built: the
+      # docker-compose.yml used by the deploy then always matches the running
+      # image. data/ is untracked and ignored, so the database is never touched.
+      - |
+        test -n "${CI_COMMIT_SHA}" || { echo "CI_COMMIT_SHA is empty, refusing to deploy"; exit 1; }
+        ssh "$DEPLOY_USER@$DEPLOY_HOST" "
           cd ~/edh-stats &&
+          git fetch --prune origin &&
+          git checkout --force ${CI_COMMIT_SHA} &&
+          git --no-pager log -1 --oneline &&
           docker compose pull edh-stats &&
           docker compose up -d --force-recreate edh-stats
         "
