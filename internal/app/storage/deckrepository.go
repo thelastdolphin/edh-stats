@@ -57,6 +57,32 @@ func (dr *DeckRepository) GetByID(ctx context.Context, id int64) (*model.Deck, e
 	return &deck, nil
 }
 
+// Delete removes the deck with the given ID.
+//
+// A deck that a game still refers to is not removed: the schema declares
+// ON DELETE RESTRICT for it, and that is reported as edherrors.ErrDeckInUse
+// rather than as a driver error.
+func (dr *DeckRepository) Delete(ctx context.Context, id int64) error {
+	const query = `DELETE FROM decks WHERE id = ?`
+
+	result, err := dr.db.ExecContext(ctx, query, id)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return fmt.Errorf("delete deck %d: %w", id, edherrors.ErrDeckInUse)
+		}
+		return fmt.Errorf("delete deck %d: %w", id, err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete deck %d: %w", id, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("delete deck %d: %w", id, edherrors.ErrDeckNotFound)
+	}
+	return nil
+}
+
 // List returns the decks matching the filters, ordered by ID and paginated.
 func (dr *DeckRepository) List(ctx context.Context, filters DeckFilters) ([]*model.Deck, error) {
 	query := `SELECT id, name, owner, type FROM decks WHERE 1=1`
@@ -125,4 +151,22 @@ func isUniqueViolation(err error) bool {
 	default:
 		return false
 	}
+}
+
+// isForeignKeyViolation reports whether err is the constraint failure SQLite
+// raises when a deck is still referenced by a game.
+//
+// The primary code is checked, not the extended one, and that is deliberate: for
+// ON DELETE RESTRICT SQLite reports SQLITE_CONSTRAINT_TRIGGER (1811) rather than
+// SQLITE_CONSTRAINT_FOREIGNKEY (787), because the restriction is implemented as an
+// internal trigger - even though the message reads "FOREIGN KEY constraint
+// failed". A DELETE on decks can only break that one constraint, so
+// SQLITE_CONSTRAINT is both accurate and independent of which variant the driver
+// happens to surface.
+func isForeignKeyViolation(err error) bool {
+	var sqliteErr sqlite3.Error
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
+	return sqliteErr.Code == sqlite3.ErrConstraint
 }

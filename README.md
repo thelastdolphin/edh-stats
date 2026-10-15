@@ -25,6 +25,7 @@ startup, so a fresh database needs no manual preparation.
 | `POST` | `/decks`      | Creates a deck. Body: `{"name": "...", "owner": "...", "type": "..."}`. Every field is required and limited to 50 characters; `type` is free text. `201` with a `Location` header, `400` for invalid input, `409` when the name+owner pair already exists. |
 | `GET`  | `/decks`      | Lists decks. Query parameters: `name`, `owner`, `type`, `page` (from 1, default 1), `limit` (1–100, default 20). Returns `[]` when nothing matches.                              |
 | `GET`  | `/decks/{id}` | Returns one deck, or `404` when it does not exist.                                                                                                                             |
+| `DELETE` | `/decks/{id}` | Deletes a deck: `204` on success, `404` when it does not exist, `409` when a game still refers to it.                                                                                    |
 | `GET`  | `/health`     | `200` while the database answers, `503` otherwise.                                                                                                                             |
 
 Request bodies are limited to 1 MiB. An unknown path answers `404`, and a known
