@@ -1,3 +1,14 @@
-.idea
-edh-stats
-data/
+# Anchored on purpose: an unanchored "edh-stats" or "data/" also matches
+# cmd/edh-stats and packaging/data, which silently hides real files from git -
+# that is how a broken Dockerfile and an uncommitted packaging file happened.
+/.idea
+/edh-stats
+/data
+
+# Private keys must never be committed: the deployment pipeline authenticates
+# over SSH, and these files used to sit in the repository root without being
+# ignored.
+deploy_key*
+*.key
+*.pem
+.env

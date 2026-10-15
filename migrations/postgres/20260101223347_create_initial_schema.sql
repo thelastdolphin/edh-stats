@@ -1,3 +1,7 @@
+-- Схема PostgreSQL. Сервис сейчас работает на SQLite (migrations/sqlite3), а эта
+-- миграция держится на случай перехода и обязана повторять тот же контракт.
+-- Если она уже применялась на какой-нибудь базе, правьте её не здесь, а новой
+-- миграцией: goose отмечает применённые версии по номеру и тело файла не сверяет.
 -- +goose Up
 -- +goose StatementBegin
 CREATE TABLE result_types (
@@ -10,17 +14,27 @@ INSERT INTO result_types (name) VALUES
     ('loss'),
     ('draw');
 
+-- Ширина и обязательность полей повторяют контракт API: name, owner и type
+-- обязательны и ограничены 50 символами (internal/app/http/dto/deck_request.go).
+-- Раньше здесь стояли VARCHAR(200)/VARCHAR(100) и nullable-колонки, то есть схема
+-- разрешала то, что сервис отклоняет.
+-- Проверка на непустое значение намеренно оставлена валидации API, а не CHECK:
+-- так эта схема остаётся совместимой с SQLite-версией, где колонки уже созданы
+-- nullable и не могут быть ужесточены без перестройки таблицы.
 CREATE TABLE decks (
     id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(200) NOT NULL,
-    owner VARCHAR(100),
-    type VARCHAR(50),
+    name VARCHAR(50) NOT NULL,
+    owner VARCHAR(50) NOT NULL,
+    type VARCHAR(50) NOT NULL,
     -- ВНИМАНИЕ: ЗДЕСЬ ДОБАВЛЯТЬ НОВЫЕ ПОЛЯ ДЛЯ КОЛОД
     -- КОНЕЦ ЗОНЫ ДЛЯ ПОЛЕЙ
     CONSTRAINT decks_name_owner_unique UNIQUE (name, owner) -- Колода уникальна по названию+автору
 );
 
 COMMENT ON TABLE decks IS 'Все колоды, участвующие в играх.';
+COMMENT ON COLUMN decks.name IS 'Название колоды, 1..50 символов.';
+COMMENT ON COLUMN decks.owner IS 'Владелец колоды, 1..50 символов.';
+COMMENT ON COLUMN decks.type IS 'Свободный текст (архетип, формат), 1..50 символов: список значений намеренно не ограничен.';
 
 CREATE TABLE games (
     id BIGSERIAL PRIMARY KEY,
@@ -34,7 +48,7 @@ CREATE TABLE game_deck (
     id BIGSERIAL PRIMARY KEY,
     game_id BIGINT NOT NULL REFERENCES games(id) ON DELETE CASCADE, -- Ссылка на игру
     deck_id BIGINT NOT NULL REFERENCES decks(id) ON DELETE RESTRICT, -- Ссылка на колоду
-    result_type_id SMALLINT NOT NULL REFERENCES result_types(id), -- Ссылка на тип результата
+    result_type_id SMALLINT NOT NULL REFERENCES result_types(id) ON DELETE RESTRICT, -- Ссылка на тип результата
     win_description TEXT, -- Описание победы (почему, как)
 
     CONSTRAINT game_deck_game_deck_unique UNIQUE (game_id, deck_id)

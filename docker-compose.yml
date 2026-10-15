@@ -1,12 +1,30 @@
 services:
   edh-stats:
     build: .
+    # The deploy host pulls this reference (built by CI for linux/arm64); a local
+    # `docker compose up -d --build` builds the image for the local architecture.
+    image: registry.wdpkr.home/edh-stats:latest
     container_name: edh-stats
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       - ./data:/app/data
-      - ./migrations:/app/migrations
     environment:
+      # Honoured by cmd/edh-stats since the service reads its configuration from
+      # the environment.
       - DB_PATH=/app/data/edh_stats.db
+    # The image runs as uid 10001 by default, while a bind-mounted ./data belongs
+    # to the host user. Running as that user is what makes the database writable:
+    # SQLite writes both the database file and its -wal/-shm siblings in the
+    # directory. Override APP_UID/APP_GID if the host owner differs.
+    #
+    # Caveat: with rootless Docker (or userns-remap) the container uid is mapped
+    # to a different host uid, so this no longer lines up with the directory
+    # owner. Either chown ./data to the mapped uid, or switch to a named volume,
+    # which the image already prepares with the right ownership:
+    #   volumes:
+    #     - edh-stats-data:/app/data
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    # Graceful shutdown allows 15s (main.go); give it room before SIGKILL.
+    stop_grace_period: 20s
