@@ -8,7 +8,7 @@ steps:
   # Verification. -p 1 keeps the cgo test binaries from being linked in parallel:
   # the host is a 4 GB Raspberry Pi, and that is the step where it proved fragile.
   - name: vet-and-test
-    image: golang:1.26
+    image: golang:1.27.2
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod
@@ -35,7 +35,7 @@ steps:
   # GOGC/GOMAXPROCS come from the original step: the host has four cores and 4 GB,
   # and GC off for a short-lived compiler avoids spending that budget on collection.
   - name: build-binary
-    image: golang:1.26
+    image: golang:1.27.2
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod

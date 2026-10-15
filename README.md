@@ -4,7 +4,7 @@ Small app handling statistics for EDH games.
 
 Design document (in Russian): https://docs.google.com/document/d/18G8sqmAyTxzO-AKIA15zp99Wp6BqGOQbevd1uOmMs3Y/edit
 
-Written in Golang 1.26.
+Written in Golang 1.27.
 
 ## Configuration
 
