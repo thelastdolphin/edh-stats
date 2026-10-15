@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strconv"
 
-	httpUtils "example.com/edh-stats/internal/app/http"
-	"example.com/edh-stats/internal/app/storage"
+	httpUtils "github.com/thelastdolphin/edh-stats/internal/app/http"
+	"github.com/thelastdolphin/edh-stats/internal/app/storage"
 )
 
 func GetDeck(store *storage.Store) http.HandlerFunc {

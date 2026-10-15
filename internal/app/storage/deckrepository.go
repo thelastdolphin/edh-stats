@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"example.com/edh-stats/internal/app/model"
+	"github.com/thelastdolphin/edh-stats/internal/app/model"
 )
 
 type DeckRepository struct {

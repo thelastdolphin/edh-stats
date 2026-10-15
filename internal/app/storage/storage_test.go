@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"example.com/edh-stats/internal/app/model"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/thelastdolphin/edh-stats/internal/app/model"
 )
 
 // Вспомогательная функция для создания временной БД

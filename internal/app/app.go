@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"example.com/edh-stats/internal/app/http/handler/create"
-	"example.com/edh-stats/internal/app/http/handler/getdeck"
-	"example.com/edh-stats/internal/app/storage"
+	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/create"
+	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/getdeck"
+	"github.com/thelastdolphin/edh-stats/internal/app/storage"
 )
 
 type Config struct {

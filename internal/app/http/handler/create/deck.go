@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"strings"
 
-	httpUtils "example.com/edh-stats/internal/app/http"
-	"example.com/edh-stats/internal/app/http/dto"
-	"example.com/edh-stats/internal/app/model"
-	"example.com/edh-stats/internal/app/storage"
+	httpUtils "github.com/thelastdolphin/edh-stats/internal/app/http"
+	"github.com/thelastdolphin/edh-stats/internal/app/http/dto"
+	"github.com/thelastdolphin/edh-stats/internal/app/model"
+	"github.com/thelastdolphin/edh-stats/internal/app/storage"
 )
 
 func Deck(store *storage.Store) http.HandlerFunc {

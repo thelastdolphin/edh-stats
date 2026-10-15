@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"example.com/edh-stats/internal/app"
+	"github.com/thelastdolphin/edh-stats/internal/app"
 )
 
 func main() {
