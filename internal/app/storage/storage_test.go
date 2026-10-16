@@ -271,6 +271,63 @@ func TestDeckRepository_Delete_InUse(t *testing.T) {
 	}
 }
 
+func TestDeckRepository_Update(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	deck := mustCreateDeck(t, store, "Old Name", "tester", "control")
+	deck.Name = "New Name"
+	deck.Owner = "someone else"
+	deck.Type = "combo"
+
+	if err := store.Deck().Update(ctx, deck); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	got, err := store.Deck().GetByID(ctx, deck.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Name != "New Name" || got.Owner != "someone else" || got.Type != "combo" {
+		t.Errorf("deck after the update = %+v", got)
+	}
+}
+
+// TestDeckRepository_Update_UnchangedValues covers the update that changes nothing:
+// the row keeps its values and the call must not look like a missing deck.
+func TestDeckRepository_Update_UnchangedValues(t *testing.T) {
+	store := newTestStore(t)
+	deck := mustCreateDeck(t, store, "Same Name", "tester", "control")
+
+	if err := store.Deck().Update(context.Background(), deck); err != nil {
+		t.Errorf("updating a deck with its own values: %v", err)
+	}
+}
+
+func TestDeckRepository_Update_Duplicate(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	first := mustCreateDeck(t, store, "First", "tester", "control")
+	mustCreateDeck(t, store, "Second", "tester", "control")
+
+	first.Name = "Second"
+	err := store.Deck().Update(ctx, first)
+	if !errors.Is(err, edherrors.ErrDeckDuplicate) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrDeckDuplicate", err)
+	}
+}
+
+func TestDeckRepository_Update_NotFound(t *testing.T) {
+	store := newTestStore(t)
+
+	err := store.Deck().Update(context.Background(),
+		&model.Deck{ID: 999999, Name: "Name", Owner: "tester", Type: "control"})
+	if !errors.Is(err, edherrors.ErrDeckNotFound) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrDeckNotFound", err)
+	}
+}
+
 func TestDeckFilters_Clamp(t *testing.T) {
 	tests := []struct {
 		name       string

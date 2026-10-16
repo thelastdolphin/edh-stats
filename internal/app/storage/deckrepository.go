@@ -57,6 +57,32 @@ func (dr *DeckRepository) GetByID(ctx context.Context, id int64) (*model.Deck, e
 	return &deck, nil
 }
 
+// Update stores the name, owner and type of the deck identified by its ID.
+//
+// Renaming a deck onto the name and owner of another one is a violation of
+// decks_name_owner_unique, and is reported as edherrors.ErrDeckDuplicate so that
+// the HTTP layer can answer 409, exactly as Create does.
+func (dr *DeckRepository) Update(ctx context.Context, deck *model.Deck) error {
+	const query = `UPDATE decks SET name = ?, owner = ?, type = ? WHERE id = ?`
+
+	result, err := dr.db.ExecContext(ctx, query, deck.Name, deck.Owner, deck.Type, deck.ID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("update deck %d to %q/%q: %w", deck.ID, deck.Name, deck.Owner, edherrors.ErrDeckDuplicate)
+		}
+		return fmt.Errorf("update deck %d: %w", deck.ID, err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update deck %d: %w", deck.ID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("update deck %d: %w", deck.ID, edherrors.ErrDeckNotFound)
+	}
+	return nil
+}
+
 // Delete removes the deck with the given ID.
 //
 // A deck that a game still refers to is not removed: the schema declares
