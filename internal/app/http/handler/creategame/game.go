@@ -37,23 +37,23 @@ func Game(store *storage.Store) http.HandlerFunc {
 		if err := decoder.Decode(&req); err != nil {
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
-				httpUtils.Error(w, http.StatusRequestEntityTooLarge,
+				httpUtils.Error(w, http.StatusRequestEntityTooLarge, httpUtils.CodeBodyTooLarge,
 					fmt.Sprintf("request body must not exceed %d bytes", maxBodyBytes))
 				return
 			}
-			httpUtils.Error(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidJSON, "invalid JSON body: "+err.Error())
 			return
 		}
 
 		// Anything but EOF here means a second JSON document was sent.
 		if err := decoder.Decode(new(struct{})); !errors.Is(err, io.EOF) {
-			httpUtils.Error(w, http.StatusBadRequest, "body must contain a single JSON object")
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidJSON, "body must contain a single JSON object")
 			return
 		}
 
 		req.Normalize()
 		if err := req.Validate(); err != nil {
-			httpUtils.Error(w, http.StatusBadRequest, err.Error())
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeValidationFailed, err.Error())
 			return
 		}
 
@@ -62,7 +62,7 @@ func Game(store *storage.Store) http.HandlerFunc {
 		resultIDs, err := store.Game().ResultTypeIDs(r.Context())
 		if err != nil {
 			log.Printf("create game: %v", err)
-			httpUtils.Error(w, http.StatusInternalServerError, "internal error")
+			httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			return
 		}
 
@@ -75,7 +75,7 @@ func Game(store *storage.Store) http.HandlerFunc {
 					// The migration seeds them, so a missing name means a database
 					// that was tampered with rather than a bad request.
 					log.Printf("create game: result type %q is missing from the database", participant.Result)
-					httpUtils.Error(w, http.StatusInternalServerError, "internal error")
+					httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 					return
 				}
 				entry.ResultTypeID = &id
@@ -87,12 +87,12 @@ func Game(store *storage.Store) http.HandlerFunc {
 		if err != nil {
 			switch {
 			case errors.Is(err, edherrors.ErrDeckNotFound):
-				httpUtils.Error(w, http.StatusBadRequest, "a deck in the request does not exist")
+				httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeUnknownDeck, "a deck in the request does not exist")
 			case errors.Is(err, edherrors.ErrDeckAlreadyInGame):
-				httpUtils.Error(w, http.StatusBadRequest, "the same deck appears more than once")
+				httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeDuplicateParticipant, "the same deck appears more than once")
 			default:
 				log.Printf("create game: %v", err)
-				httpUtils.Error(w, http.StatusInternalServerError, "internal error")
+				httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			}
 			return
 		}

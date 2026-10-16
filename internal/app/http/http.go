@@ -16,15 +16,40 @@ func JSONEncode(w http.ResponseWriter, status int, data any) {
 	body, err := json.Marshal(data)
 	if err != nil {
 		log.Printf("encode json response: %v", err)
-		writeRaw(w, http.StatusInternalServerError, `{"error":"internal error"}`)
+		writeRaw(w, http.StatusInternalServerError, encodeError(CodeInternal, "internal error"))
 		return
 	}
 	writeRaw(w, status, string(body))
 }
 
-// Error writes a JSON error envelope.
-func Error(w http.ResponseWriter, status int, message string) {
-	JSONEncode(w, status, map[string]string{"error": message})
+// Error writes a JSON error response.
+//
+// The envelope is an object rather than a bare string so that a client can act on
+// the code without reading the message, and so that more fields - the offending
+// field of a validation failure, for instance - can be added later without
+// breaking anyone.
+func Error(w http.ResponseWriter, status int, code, message string) {
+	writeRaw(w, status, encodeError(code, message))
+}
+
+type errorEnvelope struct {
+	Error errorDetail `json:"error"`
+}
+
+type errorDetail struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// encodeError marshals the envelope, with a hand-written body as the last resort:
+// this runs on an error path already, and a second failure must still produce
+// valid JSON for the client.
+func encodeError(code, message string) string {
+	body, err := json.Marshal(errorEnvelope{Error: errorDetail{Code: code, Message: message}})
+	if err != nil {
+		return `{"error":{"code":"internal_error","message":"internal error"}}`
+	}
+	return string(body)
 }
 
 func writeRaw(w http.ResponseWriter, status int, body string) {

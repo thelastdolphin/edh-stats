@@ -39,23 +39,23 @@ func Deck(store *storage.Store) http.HandlerFunc {
 		if err := decoder.Decode(&req); err != nil {
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
-				httpUtils.Error(w, http.StatusRequestEntityTooLarge,
+				httpUtils.Error(w, http.StatusRequestEntityTooLarge, httpUtils.CodeBodyTooLarge,
 					fmt.Sprintf("request body must not exceed %d bytes", maxBodyBytes))
 				return
 			}
-			httpUtils.Error(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidJSON, "invalid JSON body: "+err.Error())
 			return
 		}
 
 		// Anything but EOF here means a second JSON document was sent.
 		if err := decoder.Decode(new(struct{})); !errors.Is(err, io.EOF) {
-			httpUtils.Error(w, http.StatusBadRequest, "body must contain a single JSON object")
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidJSON, "body must contain a single JSON object")
 			return
 		}
 
 		req.Normalize()
 		if err := req.Validate(); err != nil {
-			httpUtils.Error(w, http.StatusBadRequest, err.Error())
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeValidationFailed, err.Error())
 			return
 		}
 
@@ -66,13 +66,13 @@ func Deck(store *storage.Store) http.HandlerFunc {
 		})
 		if err != nil {
 			if errors.Is(err, edherrors.ErrDeckDuplicate) {
-				httpUtils.Error(w, http.StatusConflict, "deck with the same name and owner already exists")
+				httpUtils.Error(w, http.StatusConflict, httpUtils.CodeDeckDuplicate, "deck with the same name and owner already exists")
 				return
 			}
 			// Log the cause and answer with a generic message: SQL text is not
 			// the client's business.
 			log.Printf("create deck: %v", err)
-			httpUtils.Error(w, http.StatusInternalServerError, "internal error")
+			httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			return
 		}
 

@@ -36,6 +36,17 @@ startup, so a fresh database needs no manual preparation.
 Request bodies are limited to 1 MiB. An unknown path answers `404`, and a known
 path with the wrong method answers `405` (with an `Allow` header).
 
+Errors are JSON objects with a machine-readable code and a message meant for a human:
+
+```json
+{"error": {"code": "deck_not_found", "message": "deck not found"}}
+```
+
+The codes are `invalid_id`, `invalid_query`, `invalid_json`, `body_too_large`,
+`validation_failed`, `deck_not_found`, `game_not_found`, `deck_duplicate`,
+`deck_in_use`, `unknown_deck`, `duplicate_participant` and `internal_error`. A client
+reacts to the code; the message explains the problem and may be reworded at any time.
+
 ## Development
 
 ```sh
