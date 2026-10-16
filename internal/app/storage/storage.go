@@ -26,6 +26,7 @@ const busyTimeoutMs = 5000
 type Store struct {
 	db             *sql.DB
 	deckRepository *DeckRepository
+	gameRepository *GameRepository
 }
 
 // NewStore opens (creating it if necessary) the SQLite database at dbPath,
@@ -51,6 +52,7 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 
 	store := &Store{db: db}
 	store.deckRepository = &DeckRepository{db: db}
+	store.gameRepository = &GameRepository{db: db}
 	return store, nil
 }
 
@@ -86,6 +88,11 @@ func (s *Store) Ping(ctx context.Context) error {
 // Deck returns the deck repository.
 func (s *Store) Deck() *DeckRepository {
 	return s.deckRepository
+}
+
+// Game returns the game repository.
+func (s *Store) Game() *GameRepository {
+	return s.gameRepository
 }
 
 // Close releases the database handle.
