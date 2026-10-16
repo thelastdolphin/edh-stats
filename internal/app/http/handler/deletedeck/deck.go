@@ -22,23 +22,23 @@ func Deck(store *storage.Store) http.HandlerFunc {
 		// exist, so they are bad input rather than a reason to go to the database.
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil || id < 1 {
-			httpUtils.Error(w, http.StatusBadRequest, "id must be a positive integer")
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidID, "id must be a positive integer")
 			return
 		}
 
 		if err := store.Deck().Delete(r.Context(), id); err != nil {
 			switch {
 			case errors.Is(err, edherrors.ErrDeckNotFound):
-				httpUtils.Error(w, http.StatusNotFound, "deck not found")
+				httpUtils.Error(w, http.StatusNotFound, httpUtils.CodeDeckNotFound, "deck not found")
 			case errors.Is(err, edherrors.ErrDeckInUse):
 				// The schema refuses to drop a deck a game refers to; that is the
 				// client's conflict, not a server failure.
-				httpUtils.Error(w, http.StatusConflict, "deck is still referenced by a game")
+				httpUtils.Error(w, http.StatusConflict, httpUtils.CodeDeckInUse, "deck is still referenced by a game")
 			default:
 				// Log the cause, answer with a generic message: SQL text is not the
 				// client's business.
 				log.Printf("delete deck %d: %v", id, err)
-				httpUtils.Error(w, http.StatusInternalServerError, "internal error")
+				httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			}
 			return
 		}

@@ -7,6 +7,38 @@ import (
 	"testing"
 )
 
+// decodeError decodes the error envelope written by Error.
+func decodeError(t *testing.T, recorder *httptest.ResponseRecorder) errorDetail {
+	t.Helper()
+
+	var payload errorEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("body is not a valid error envelope: %v (%s)", err, recorder.Body)
+	}
+	return payload.Error
+}
+
+func TestError(t *testing.T) {
+	recorder := httptest.NewRecorder()
+
+	Error(recorder, http.StatusNotFound, CodeDeckNotFound, "deck not found")
+
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType != "application/json; charset=utf-8" {
+		t.Errorf("Content-Type = %q", contentType)
+	}
+
+	got := decodeError(t, recorder)
+	if got.Code != CodeDeckNotFound {
+		t.Errorf("code = %q, want %q", got.Code, CodeDeckNotFound)
+	}
+	if got.Message != "deck not found" {
+		t.Errorf("message = %q", got.Message)
+	}
+}
+
 func TestJSONEncode(t *testing.T) {
 	t.Run("writes the payload with the given status", func(t *testing.T) {
 		recorder := httptest.NewRecorder()
@@ -40,13 +72,8 @@ func TestJSONEncode(t *testing.T) {
 		if recorder.Code != http.StatusInternalServerError {
 			t.Errorf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
 		}
-
-		var payload map[string]string
-		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
-			t.Fatalf("body is not valid JSON: %v (%s)", err, recorder.Body)
-		}
-		if payload["error"] == "" {
-			t.Errorf("payload = %v, want an error field", payload)
+		if got := decodeError(t, recorder); got.Code != CodeInternal {
+			t.Errorf("code = %q, want %q", got.Code, CodeInternal)
 		}
 	})
 }

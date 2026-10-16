@@ -69,3 +69,10 @@ func (f GameFilters) Clamp() GameFilters {
 func (f GameFilters) Offset() int {
 	return (f.Page - 1) * f.Limit
 }
+
+// StatsFilters narrows the statistics to a period. Both bounds are inclusive ISO
+// dates and either may be empty.
+type StatsFilters struct {
+	From string
+	To   string
+}

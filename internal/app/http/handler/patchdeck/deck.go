@@ -27,7 +27,7 @@ func Deck(store *storage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil || id < 1 {
-			httpUtils.Error(w, http.StatusBadRequest, "id must be a positive integer")
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidID, "id must be a positive integer")
 			return
 		}
 
@@ -42,23 +42,23 @@ func Deck(store *storage.Store) http.HandlerFunc {
 		if err := decoder.Decode(&req); err != nil {
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
-				httpUtils.Error(w, http.StatusRequestEntityTooLarge,
+				httpUtils.Error(w, http.StatusRequestEntityTooLarge, httpUtils.CodeBodyTooLarge,
 					fmt.Sprintf("request body must not exceed %d bytes", maxBodyBytes))
 				return
 			}
-			httpUtils.Error(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidJSON, "invalid JSON body: "+err.Error())
 			return
 		}
 
 		// Anything but EOF here means a second JSON document was sent.
 		if err := decoder.Decode(new(struct{})); !errors.Is(err, io.EOF) {
-			httpUtils.Error(w, http.StatusBadRequest, "body must contain a single JSON object")
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidJSON, "body must contain a single JSON object")
 			return
 		}
 
 		req.Normalize()
 		if err := req.Validate(); err != nil {
-			httpUtils.Error(w, http.StatusBadRequest, err.Error())
+			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeValidationFailed, err.Error())
 			return
 		}
 
@@ -68,11 +68,11 @@ func Deck(store *storage.Store) http.HandlerFunc {
 		deck, err := store.Deck().GetByID(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, edherrors.ErrDeckNotFound) {
-				httpUtils.Error(w, http.StatusNotFound, "deck not found")
+				httpUtils.Error(w, http.StatusNotFound, httpUtils.CodeDeckNotFound, "deck not found")
 				return
 			}
 			log.Printf("read deck %d: %v", id, err)
-			httpUtils.Error(w, http.StatusInternalServerError, "internal error")
+			httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			return
 		}
 
@@ -81,14 +81,14 @@ func Deck(store *storage.Store) http.HandlerFunc {
 		if err := store.Deck().Update(r.Context(), deck); err != nil {
 			switch {
 			case errors.Is(err, edherrors.ErrDeckDuplicate):
-				httpUtils.Error(w, http.StatusConflict, "deck with the same name and owner already exists")
+				httpUtils.Error(w, http.StatusConflict, httpUtils.CodeDeckDuplicate, "deck with the same name and owner already exists")
 			case errors.Is(err, edherrors.ErrDeckNotFound):
-				httpUtils.Error(w, http.StatusNotFound, "deck not found")
+				httpUtils.Error(w, http.StatusNotFound, httpUtils.CodeDeckNotFound, "deck not found")
 			default:
 				// Log the cause and answer with a generic message: SQL text is not
 				// the client's business.
 				log.Printf("update deck %d: %v", id, err)
-				httpUtils.Error(w, http.StatusInternalServerError, "internal error")
+				httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			}
 			return
 		}

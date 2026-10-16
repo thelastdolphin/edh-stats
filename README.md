@@ -10,13 +10,21 @@ Written in Golang 1.27.
 
 The service is configured through the environment:
 
-| Variable         | Default                 | Meaning                          |
-| ---------------- | ----------------------- | -------------------------------- |
-| `DB_PATH`        | `./data/edh_stats.db`   | SQLite database file.            |
-| `SERVER_ADDRESS` | `:8080`                 | Address the HTTP server binds to.|
+| Variable         | Default               | Meaning                                              |
+| ---------------- | --------------------- | ---------------------------------------------------- |
+| `DB_PATH`        | `./data/edh_stats.db` | SQLite database file.                                |
+| `SERVER_ADDRESS` | `:8080`               | Address the HTTP server binds to.                     |
+| `API_TOKEN`      | *(empty)*             | Bearer token the API requires; empty leaves it open.  |
 
 Schema migrations are embedded into the binary and applied automatically at
 startup, so a fresh database needs no manual preparation.
+
+Setting `API_TOKEN` makes every request except `GET /health` require
+`Authorization: Bearer <token>`. The health endpoint stays open on purpose: the
+container health check runs this very binary from inside the container. Generate a
+token with `head -c 32 /dev/urandom | base64` and put it in a `.env` file next to
+`docker-compose.yml` (compose reads that file, and it is not committed). Until a
+token is configured the service logs a warning at startup.
 
 ## API
 
@@ -31,10 +39,22 @@ startup, so a fresh database needs no manual preparation.
 | `GET`  | `/games`      | Lists games, newest first, each with its participants. Query parameters: `deck_id`, `player`, `from`, `to` (inclusive `YYYY-MM-DD`), `page`, `limit`. Returns `[]` when nothing matches. |
 | `GET`  | `/games/{id}` | Returns one game with its participants, or `404` when it does not exist. |
 | `DELETE` | `/games/{id}` | Deletes a game together with its participants: `204` on success, `404` when it does not exist. |
+| `GET`  | `/stats/decks` | One row per deck that took part in a game: `deck_id`, `name`, `owner`, `games`, `wins`, `losses`, `draws`, most played first. `wins`, `losses` and `draws` count only the participations that carry a result, so they can add up to less than `games`; there is no win rate, because 0 of 0 results would read as "never won". Optional inclusive `from` and `to` dates. |
 | `GET`  | `/health`     | `200` while the database answers, `503` otherwise.                                                                                                                             |
 
 Request bodies are limited to 1 MiB. An unknown path answers `404`, and a known
 path with the wrong method answers `405` (with an `Allow` header).
+
+Errors are JSON objects with a machine-readable code and a message meant for a human:
+
+```json
+{"error": {"code": "deck_not_found", "message": "deck not found"}}
+```
+
+The codes are `invalid_id`, `invalid_query`, `invalid_json`, `body_too_large`,
+`validation_failed`, `deck_not_found`, `game_not_found`, `deck_duplicate`,
+`deck_in_use`, `unknown_deck`, `duplicate_participant` and `internal_error`. A client
+reacts to the code; the message explains the problem and may be reworded at any time.
 
 ## Development
 
