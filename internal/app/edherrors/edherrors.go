@@ -19,4 +19,11 @@ var (
 	// ErrDeckInUse is returned when a deck is still referenced by a game and
 	// therefore cannot be deleted.
 	ErrDeckInUse = errors.New("deck is used by a game")
+
+	// ErrDeckAlreadyInGame is returned when the same deck is added to the same
+	// game twice.
+	ErrDeckAlreadyInGame = errors.New("deck is already part of the game")
+
+	// ErrGameNotFound is returned when a game lookup matched no row.
+	ErrGameNotFound = errors.New("game not found")
 )
