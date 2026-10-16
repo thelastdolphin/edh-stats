@@ -34,6 +34,9 @@ const (
 type Config struct {
 	DbPath        string
 	ServerAddress string
+	// APIToken, when set, has to be presented as a bearer token on every request
+	// except /health. Empty leaves the API open, and the service warns about it.
+	APIToken string
 }
 
 // Application owns the HTTP server and the storage it serves from.
@@ -68,7 +71,7 @@ func New(ctx context.Context, cfg Config) (*Application, error) {
 	// when the path exists but the method does not.
 	server := &http.Server{
 		Addr:              cfg.ServerAddress,
-		Handler:           httpUtils.LogRequests(mux),
+		Handler:           httpUtils.LogRequests(httpUtils.RequireToken(cfg.APIToken, mux)),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,

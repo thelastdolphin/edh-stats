@@ -14,6 +14,10 @@ services:
       # Honoured by cmd/edh-stats since the service reads its configuration from
       # the environment.
       - DB_PATH=/app/data/edh_stats.db
+      # Optional: when set, every request except /health must carry
+      # "Authorization: Bearer <token>". Compose reads it from a .env file
+      # next to this file, which is not committed; empty leaves the API open.
+      - API_TOKEN=${API_TOKEN:-}
     # The image runs as uid 10001 by default, while a bind-mounted ./data belongs
     # to the host user. Running as that user is what makes the database writable:
     # SQLite writes both the database file and its -wal/-shm siblings in the

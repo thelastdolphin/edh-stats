@@ -40,6 +40,9 @@ const (
 	// CodeDuplicateParticipant is returned when one deck appears twice in a game.
 	CodeDuplicateParticipant = "duplicate_participant"
 
+	// CodeUnauthorized is returned when the request carries no valid bearer token.
+	CodeUnauthorized = "unauthorized"
+
 	// CodeInternal is returned when the failure is on the server side.
 	CodeInternal = "internal_error"
 )

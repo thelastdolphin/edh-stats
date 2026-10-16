@@ -10,13 +10,21 @@ Written in Golang 1.27.
 
 The service is configured through the environment:
 
-| Variable         | Default                 | Meaning                          |
-| ---------------- | ----------------------- | -------------------------------- |
-| `DB_PATH`        | `./data/edh_stats.db`   | SQLite database file.            |
-| `SERVER_ADDRESS` | `:8080`                 | Address the HTTP server binds to.|
+| Variable         | Default               | Meaning                                              |
+| ---------------- | --------------------- | ---------------------------------------------------- |
+| `DB_PATH`        | `./data/edh_stats.db` | SQLite database file.                                |
+| `SERVER_ADDRESS` | `:8080`               | Address the HTTP server binds to.                     |
+| `API_TOKEN`      | *(empty)*             | Bearer token the API requires; empty leaves it open.  |
 
 Schema migrations are embedded into the binary and applied automatically at
 startup, so a fresh database needs no manual preparation.
+
+Setting `API_TOKEN` makes every request except `GET /health` require
+`Authorization: Bearer <token>`. The health endpoint stays open on purpose: the
+container health check runs this very binary from inside the container. Generate a
+token with `head -c 32 /dev/urandom | base64` and put it in a `.env` file next to
+`docker-compose.yml` (compose reads that file, and it is not committed). Until a
+token is configured the service logs a warning at startup.
 
 ## API
 

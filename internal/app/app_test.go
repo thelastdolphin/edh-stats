@@ -96,3 +96,38 @@ func TestRoutes_InternalErrorsDoNotLeakSQL(t *testing.T) {
 		}
 	}
 }
+
+// TestRoutes_TokenIsRequiredWhenConfigured covers the wiring of the token middleware:
+// with a token configured, only /health stays reachable without it.
+func TestRoutes_TokenIsRequiredWhenConfigured(t *testing.T) {
+	application, err := New(context.Background(), Config{
+		DbPath:        filepath.Join(t.TempDir(), "test.db"),
+		ServerAddress: "127.0.0.1:0",
+		APIToken:      "s3cret-token",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := application.Shutdown(context.Background()); err != nil {
+			t.Errorf("Shutdown: %v", err)
+		}
+	})
+
+	// The health probe runs inside the container and carries no token.
+	if recorder := do(t, application, http.MethodGet, "/health"); recorder.Code != http.StatusOK {
+		t.Errorf("GET /health = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	if recorder := do(t, application, http.MethodGet, "/decks"); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /decks without a token = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/decks", nil)
+	request.Header.Set("Authorization", "Bearer s3cret-token")
+	recorder := httptest.NewRecorder()
+	application.Server.Handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Errorf("GET /decks with the token = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}

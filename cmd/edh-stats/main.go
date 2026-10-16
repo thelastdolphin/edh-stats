@@ -54,9 +54,15 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	apiToken := os.Getenv("API_TOKEN")
+	if apiToken == "" {
+		log.Printf("warning: API_TOKEN is not set, so anyone who can reach the service may read and change the data")
+	}
+
 	application, err := app.New(ctx, app.Config{
 		DbPath:        envOr("DB_PATH", defaultDBPath),
 		ServerAddress: envOr("SERVER_ADDRESS", defaultServerAddress),
+		APIToken:      apiToken,
 	})
 	if err != nil {
 		return err
