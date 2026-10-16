@@ -31,6 +31,7 @@ startup, so a fresh database needs no manual preparation.
 | `GET`  | `/games`      | Lists games, newest first, each with its participants. Query parameters: `deck_id`, `player`, `from`, `to` (inclusive `YYYY-MM-DD`), `page`, `limit`. Returns `[]` when nothing matches. |
 | `GET`  | `/games/{id}` | Returns one game with its participants, or `404` when it does not exist. |
 | `DELETE` | `/games/{id}` | Deletes a game together with its participants: `204` on success, `404` when it does not exist. |
+| `GET`  | `/stats/decks` | One row per deck that took part in a game: `deck_id`, `name`, `owner`, `games`, `wins`, `losses`, `draws`, most played first. `wins`, `losses` and `draws` count only the participations that carry a result, so they can add up to less than `games`; there is no win rate, because 0 of 0 results would read as "never won". Optional inclusive `from` and `to` dates. |
 | `GET`  | `/health`     | `200` while the database answers, `503` otherwise.                                                                                                                             |
 
 Request bodies are limited to 1 MiB. An unknown path answers `404`, and a known

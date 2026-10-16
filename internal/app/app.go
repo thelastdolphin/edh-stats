@@ -15,6 +15,7 @@ import (
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/deletegame"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/getdeck"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/getgame"
+	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/getstats"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/health"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/patchdeck"
 	"github.com/thelastdolphin/edh-stats/internal/app/storage"
@@ -58,6 +59,7 @@ func New(ctx context.Context, cfg Config) (*Application, error) {
 	mux.HandleFunc("GET /games", getgame.ListGames(store))
 	mux.HandleFunc("GET /games/{id}", getgame.GetGame(store))
 	mux.HandleFunc("DELETE /games/{id}", deletegame.Game(store))
+	mux.HandleFunc("GET /stats/decks", getstats.DeckStats(store))
 	mux.HandleFunc("GET /health", health.Health(store))
 
 	// There is deliberately no catch-all "/" route any more: it answered 200 to

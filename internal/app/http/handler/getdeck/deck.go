@@ -45,13 +45,13 @@ func ListDecks(store *storage.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 
-		page, err := parseQueryInt(q.Get("page"), storage.DefaultPage)
+		page, err := httpUtils.ParseQueryInt(q.Get("page"), storage.DefaultPage)
 		if err != nil || page < 1 {
 			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidQuery, "page must be a positive integer")
 			return
 		}
 
-		limit, err := parseQueryInt(q.Get("limit"), storage.DefaultLimit)
+		limit, err := httpUtils.ParseQueryInt(q.Get("limit"), storage.DefaultLimit)
 		if err != nil || limit < 1 || limit > storage.MaxLimit {
 			httpUtils.Error(w, http.StatusBadRequest, httpUtils.CodeInvalidQuery,
 				fmt.Sprintf("limit must be an integer between 1 and %d", storage.MaxLimit))
@@ -72,16 +72,4 @@ func ListDecks(store *storage.Store) http.HandlerFunc {
 		}
 		httpUtils.JSONEncode(w, http.StatusOK, decks)
 	}
-}
-
-// parseQueryInt parses an optional integer query parameter, falling back to
-// defaultValue when the parameter is absent.
-//
-// A malformed value is reported to the caller instead of being silently
-// replaced by the default: quietly ignoring "limit=abc" hides client bugs.
-func parseQueryInt(raw string, defaultValue int) (int, error) {
-	if raw == "" {
-		return defaultValue, nil
-	}
-	return strconv.Atoi(raw)
 }

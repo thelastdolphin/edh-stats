@@ -359,3 +359,106 @@ func TestGameRepository_Create_UnknownDeck(t *testing.T) {
 		t.Errorf("error = %v, want it to wrap edherrors.ErrDeckNotFound", err)
 	}
 }
+
+func resultTypeID(t *testing.T, store *Store, name string) *int64 {
+	t.Helper()
+
+	ids, err := store.Game().ResultTypeIDs(context.Background())
+	if err != nil {
+		t.Fatalf("ResultTypeIDs: %v", err)
+	}
+	id, ok := ids[name]
+	if !ok {
+		t.Fatalf("result type %q is missing", name)
+	}
+	return &id
+}
+
+func TestGameRepository_DeckStats(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mine := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	opponent := mustCreateDeck(t, store, "Opponent", "", "")
+	mustCreateDeck(t, store, "Never Played", "", "")
+
+	win := resultTypeID(t, store, "win")
+	loss := resultTypeID(t, store, "loss")
+
+	for _, game := range []*model.Game{
+		{PlayedAt: "2026-02-07", Decks: []*model.GameDeck{
+			{DeckID: mine.ID, Player: "tester", ResultTypeID: win},
+			{DeckID: opponent.ID},
+		}},
+		{PlayedAt: "2026-05-23", Decks: []*model.GameDeck{
+			{DeckID: mine.ID, Player: "tester", ResultTypeID: loss},
+			{DeckID: opponent.ID},
+		}},
+		{PlayedAt: "2026-10-10", Decks: []*model.GameDeck{
+			{DeckID: mine.ID, Player: "tester"},
+			{DeckID: opponent.ID},
+		}},
+	} {
+		mustCreateGame(t, store, game)
+	}
+
+	stats, err := store.Game().DeckStats(ctx, StatsFilters{})
+	if err != nil {
+		t.Fatalf("DeckStats: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("rows = %d, want 2: a deck that never played has no statistics", len(stats))
+	}
+	if got := stats[0]; got.DeckID != mine.ID || got.Games != 3 || got.Wins != 1 || got.Losses != 1 || got.Draws != 0 {
+		t.Errorf("my statistics = %+v, want 3 games, 1 win, 1 loss", got)
+	}
+	if got := stats[1]; got.DeckID != opponent.ID || got.Games != 3 || got.Wins != 0 || got.Losses != 0 {
+		t.Errorf("opponent statistics = %+v, want 3 games and nothing recorded", got)
+	}
+	// A deck without an owner is reported with an empty one, not as a failure.
+	if stats[1].Owner != "" {
+		t.Errorf("owner = %q, want empty", stats[1].Owner)
+	}
+}
+
+func TestGameRepository_DeckStats_DateRange(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mine := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	opponent := mustCreateDeck(t, store, "Opponent", "", "")
+
+	for _, date := range []string{"2026-02-07", "2026-05-23", "2026-10-10"} {
+		mustCreateGame(t, store, &model.Game{
+			PlayedAt: date,
+			Decks:    []*model.GameDeck{{DeckID: mine.ID}, {DeckID: opponent.ID}},
+		})
+	}
+
+	for name, tc := range map[string]struct {
+		filters StatsFilters
+		want    int
+	}{
+		"everything":       {StatsFilters{}, 3},
+		"from a date":      {StatsFilters{From: "2026-05-23"}, 2},
+		"to a date":        {StatsFilters{To: "2026-02-07"}, 1},
+		"a closed range":   {StatsFilters{From: "2026-01-01", To: "2026-12-31"}, 3},
+		"outside the data": {StatsFilters{From: "2027-01-01"}, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stats, err := store.Game().DeckStats(ctx, tc.filters)
+			if err != nil {
+				t.Fatalf("DeckStats: %v", err)
+			}
+			if tc.want == 0 {
+				if len(stats) != 0 {
+					t.Errorf("rows = %d, want none", len(stats))
+				}
+				return
+			}
+			if len(stats) == 0 || stats[0].Games != tc.want {
+				t.Errorf("statistics = %+v, want %d games", stats, tc.want)
+			}
+		})
+	}
+}
