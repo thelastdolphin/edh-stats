@@ -365,3 +365,44 @@ func TestDataSourceName_EnablesPragmas(t *testing.T) {
 		}
 	}
 }
+
+func TestDeckRepository_List_Search(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mustCreateDeck(t, store, "Clement Frogs", "Andrew Kornilov", "control")
+	mustCreateDeck(t, store, "Wilhelt Zombies", "Ivan", "tribal")
+	mustCreateDeck(t, store, "100% Wins", "Ivan", "combo")
+
+	for name, tc := range map[string]struct {
+		search string
+		want   int
+	}{
+		"part of a name":         {"frog", 1},
+		"part of an owner":       {"korn", 1},
+		"case does not matter":   {"WILHELT", 1},
+		"several matches":        {"ivan", 2},
+		"nothing":                {"zzz", 0},
+		"a percent sign is text": {"100%", 1},
+		"an underscore is text":  {"_", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			decks, err := store.Deck().List(ctx, DeckFilters{Search: tc.search})
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(decks) != tc.want {
+				t.Errorf("decks = %d, want %d", len(decks), tc.want)
+			}
+		})
+	}
+
+	// Search narrows the listing together with the exact filters, not instead of them.
+	decks, err := store.Deck().List(ctx, DeckFilters{Search: "ivan", Type: "tribal"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(decks) != 1 {
+		t.Errorf("search plus an exact filter = %d decks, want 1", len(decks))
+	}
+}

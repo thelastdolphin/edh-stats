@@ -169,3 +169,39 @@ func TestListDecks_InvalidPagination(t *testing.T) {
 		}
 	}
 }
+
+// TestListDecks_Search covers the substring search the deck picker of a client is
+// built on.
+func TestListDecks_Search(t *testing.T) {
+	store := newTestStore(t)
+	mustCreateDeck(t, store, "Clement Frogs")
+	mustCreateDeck(t, store, "Wilhelt Zombies")
+	mux := newTestMux(store)
+
+	for name, tc := range map[string]struct {
+		target string
+		want   int
+	}{
+		"part of a name":       {"/decks?search=frog", 1},
+		"part of an owner":     {"/decks?search=test", 2},
+		"case does not matter": {"/decks?search=WILHELT", 1},
+		"nothing matches":      {"/decks?search=zzz", 0},
+		"the whole list":       {"/decks", 2},
+		"a wildcard is text":   {"/decks?search=_", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := get(t, mux, tc.target)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body: %s)", recorder.Code, http.StatusOK, recorder.Body)
+			}
+
+			var decks []model.Deck
+			if err := json.Unmarshal(recorder.Body.Bytes(), &decks); err != nil {
+				t.Fatalf("decode %q: %v", recorder.Body, err)
+			}
+			if len(decks) != tc.want {
+				t.Errorf("decks = %d, want %d", len(decks), tc.want)
+			}
+		})
+	}
+}

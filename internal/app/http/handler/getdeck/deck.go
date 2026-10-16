@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/thelastdolphin/edh-stats/internal/app/edherrors"
 	httpUtils "github.com/thelastdolphin/edh-stats/internal/app/http"
@@ -59,11 +60,12 @@ func ListDecks(store *storage.Store) http.HandlerFunc {
 		}
 
 		decks, err := store.Deck().List(r.Context(), storage.DeckFilters{
-			Name:  q.Get("name"),
-			Owner: q.Get("owner"),
-			Type:  q.Get("type"),
-			Page:  page,
-			Limit: limit,
+			Name:   q.Get("name"),
+			Owner:  q.Get("owner"),
+			Type:   q.Get("type"),
+			Search: strings.TrimSpace(q.Get("search")),
+			Page:   page,
+			Limit:  limit,
 		})
 		if err != nil {
 			log.Printf("list decks: %v", err)

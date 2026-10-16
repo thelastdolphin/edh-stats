@@ -8,12 +8,15 @@ const (
 )
 
 // DeckFilters narrows and paginates a deck listing.
+//
+// Name, Owner and Type match exactly; Search looks for a part of a name or an owner.
 type DeckFilters struct {
-	Name  string
-	Owner string
-	Type  string
-	Page  int
-	Limit int
+	Name   string
+	Owner  string
+	Type   string
+	Search string
+	Page   int
+	Limit  int
 }
 
 // Clamp returns a copy with Page and Limit forced into the supported range.
