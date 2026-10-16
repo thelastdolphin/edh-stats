@@ -112,6 +112,11 @@ func TestGame_CreatesTheGame(t *testing.T) {
 		}
 	}
 
+	// The response is the stored game, so it carries the deck names too.
+	if game.Decks[0].DeckName != "Clement Bounce" {
+		t.Errorf("the response has no deck name: %+v", game.Decks[0])
+	}
+
 	stored, err := store.Game().GetByID(context.Background(), game.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)

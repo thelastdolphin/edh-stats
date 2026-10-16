@@ -567,3 +567,29 @@ func TestGameRepository_UpdateParticipant_NotFound(t *testing.T) {
 		t.Errorf("error = %v, want it to wrap edherrors.ErrParticipantNotFound", err)
 	}
 }
+
+// TestGameRepository_FillsDeckNames covers the join behind the participants: a client
+// listing games gets the names without asking for the deck list as well.
+func TestGameRepository_FillsDeckNames(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mine := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	opponent := mustCreateDeck(t, store, "Opponent", "", "")
+	game := mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-02-07",
+		Decks:    []*model.GameDeck{{DeckID: mine.ID}, {DeckID: opponent.ID}},
+	})
+
+	got, err := store.Game().GetByID(ctx, game.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Decks[0].DeckName != "My Deck" || got.Decks[0].DeckOwner != "tester" {
+		t.Errorf("first participant = %+v", got.Decks[0])
+	}
+	// A deck without an owner reports an empty one rather than failing to scan.
+	if got.Decks[1].DeckName != "Opponent" || got.Decks[1].DeckOwner != "" {
+		t.Errorf("second participant = %+v", got.Decks[1])
+	}
+}

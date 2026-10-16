@@ -106,6 +106,11 @@ func TestListGames_NewestFirstWithParticipants(t *testing.T) {
 		if len(game.Decks) != 2 {
 			t.Errorf("game %d has %d participants, want 2", i, len(game.Decks))
 		}
+		// The listing carries the names, so a client can render it without a second
+		// request for the deck list.
+		if game.Decks[0].DeckName != "My Deck" || game.Decks[1].DeckName != "Opponent" {
+			t.Errorf("game %d participants = %+v, want their deck names", i, game.Decks)
+		}
 	}
 }
 
@@ -208,6 +213,9 @@ func TestGetGame(t *testing.T) {
 	}
 	if got.Decks[0].ResultTypeID == nil {
 		t.Error("my participation lost its result")
+	}
+	if got.Decks[0].DeckName != "My Deck" || got.Decks[1].DeckName != "Opponent" {
+		t.Errorf("participants = %+v, want their deck names", got.Decks)
 	}
 }
 

@@ -203,8 +203,13 @@ func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.G
 	}
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(games)), ",")
-	query := `SELECT game_id, deck_id, player, result_type_id, win_description
-	            FROM game_deck WHERE game_id IN (` + placeholders + `) ORDER BY id`
+	// The deck is joined so that a client can put names next to the identifiers; its
+	// owner is nullable, and a NULL would not scan into a string.
+	query := `SELECT gd.game_id, gd.deck_id, d.name, COALESCE(d.owner, ''),
+	                 gd.player, gd.result_type_id, gd.win_description
+	            FROM game_deck gd
+	            JOIN decks d ON d.id = gd.deck_id
+	           WHERE gd.game_id IN (` + placeholders + `) ORDER BY gd.id`
 
 	args := make([]any, 0, len(games))
 	byID := make(map[int64]*model.Game, len(games))
@@ -227,7 +232,8 @@ func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.G
 			resultTypeID   sql.NullInt64
 			winDescription sql.NullString
 		)
-		if err := rows.Scan(&gameID, &participant.DeckID, &player, &resultTypeID, &winDescription); err != nil {
+		if err := rows.Scan(&gameID, &participant.DeckID, &participant.DeckName, &participant.DeckOwner,
+			&player, &resultTypeID, &winDescription); err != nil {
 			return fmt.Errorf("scan participant: %w", err)
 		}
 
