@@ -39,6 +39,8 @@ token is configured the service logs a warning at startup.
 | `GET`  | `/games`      | Lists games, newest first, each with its participants. Query parameters: `deck_id`, `player`, `from`, `to` (inclusive `YYYY-MM-DD`), `page`, `limit`. Returns `[]` when nothing matches. |
 | `GET`  | `/games/{id}` | Returns one game with its participants, or `404` when it does not exist. |
 | `DELETE` | `/games/{id}` | Deletes a game together with its participants: `204` on success, `404` when it does not exist. |
+| `PATCH` | `/games/{id}` | Changes the date and the notes of a game; only the fields present in the body are touched. `200` with the updated game, `400` for invalid input, `404` when it does not exist. |
+| `PATCH` | `/games/{id}/decks/{deckID}` | Changes one participation: who piloted the deck and with what result. An empty string clears a value, which is how a result recorded by mistake is removed. `200` with the whole game, `400` for invalid input, `404` when the game or the participation does not exist. |
 | `GET`  | `/stats/decks` | One row per deck that took part in a game: `deck_id`, `name`, `owner`, `games`, `wins`, `losses`, `draws`, most played first. `wins`, `losses` and `draws` count only the participations that carry a result, so they can add up to less than `games`; there is no win rate, because 0 of 0 results would read as "never won". Optional inclusive `from` and `to` dates. |
 | `GET`  | `/health`     | `200` while the database answers, `503` otherwise.                                                                                                                             |
 

@@ -26,4 +26,8 @@ var (
 
 	// ErrGameNotFound is returned when a game lookup matched no row.
 	ErrGameNotFound = errors.New("game not found")
+
+	// ErrParticipantNotFound is returned when a deck does not take part in a game,
+	// so there is no participation to read or change.
+	ErrParticipantNotFound = errors.New("the deck does not take part in the game")
 )

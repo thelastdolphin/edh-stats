@@ -28,6 +28,10 @@ const (
 	// CodeGameNotFound is returned when no game has the requested identifier.
 	CodeGameNotFound = "game_not_found"
 
+	// CodeParticipantNotFound is returned when a deck does not take part in the
+	// game that was asked about.
+	CodeParticipantNotFound = "participant_not_found"
+
 	// CodeDeckDuplicate is returned when the name and owner are already taken.
 	CodeDeckDuplicate = "deck_duplicate"
 

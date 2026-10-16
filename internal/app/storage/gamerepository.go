@@ -51,25 +51,8 @@ func (gr *GameRepository) Create(ctx context.Context, game *model.Game) (*model.
 	}
 	game.ID = id
 
-	const insertParticipant = `INSERT INTO game_deck (game_id, deck_id, result_type_id, player, win_description)
-	                           VALUES (?, ?, ?, ?, ?)`
-	for _, participant := range game.Decks {
-		_, err := tx.ExecContext(ctx, insertParticipant, game.ID, participant.DeckID,
-			participant.ResultTypeID, nullIfEmpty(participant.Player), nullIfEmpty(participant.WinDescription))
-		if err != nil {
-			switch {
-			case isUniqueViolation(err):
-				return nil, fmt.Errorf("add deck %d to game %d: %w",
-					participant.DeckID, game.ID, edherrors.ErrDeckAlreadyInGame)
-			case isForeignKeyViolation(err):
-				// The game was inserted by this transaction, so the only foreign key
-				// a participation can break is deck_id.
-				return nil, fmt.Errorf("add deck %d to game %d: %w",
-					participant.DeckID, game.ID, edherrors.ErrDeckNotFound)
-			default:
-				return nil, fmt.Errorf("add deck %d to game %d: %w", participant.DeckID, game.ID, err)
-			}
-		}
+	if _, err := insertParticipants(ctx, tx, game); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -102,6 +85,51 @@ func (gr *GameRepository) GetByID(ctx context.Context, id int64) (*model.Game, e
 		return nil, err
 	}
 	return game, nil
+}
+
+// Update stores the date and the notes of an existing game.
+//
+// The participants are not touched: they have UpdateParticipant of their own, which
+// is what keeps a corrected result from wiping the others.
+func (gr *GameRepository) Update(ctx context.Context, game *model.Game) error {
+	const query = `UPDATE games SET played_at = ?, notes = ? WHERE id = ?`
+
+	result, err := gr.db.ExecContext(ctx, query, game.PlayedAt, nullIfEmpty(game.Notes), game.ID)
+	if err != nil {
+		return fmt.Errorf("update game %d: %w", game.ID, err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update game %d: %w", game.ID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("update game %d: %w", game.ID, edherrors.ErrGameNotFound)
+	}
+	return nil
+}
+
+// UpdateParticipant changes who piloted a deck in a game and with what result.
+//
+// resultTypeID is a pointer because the column is nullable: nil clears the result,
+// which is the normal state of every participation except the one belonging to the
+// player keeping the statistics.
+func (gr *GameRepository) UpdateParticipant(ctx context.Context, gameID, deckID int64, player string, resultTypeID *int64) error {
+	const query = `UPDATE game_deck SET player = ?, result_type_id = ? WHERE game_id = ? AND deck_id = ?`
+
+	result, err := gr.db.ExecContext(ctx, query, nullIfEmpty(player), resultTypeID, gameID, deckID)
+	if err != nil {
+		return fmt.Errorf("update deck %d in game %d: %w", deckID, gameID, err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update deck %d in game %d: %w", deckID, gameID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("update deck %d in game %d: %w", deckID, gameID, edherrors.ErrParticipantNotFound)
+	}
+	return nil
 }
 
 // List returns the games matching the filters, newest first, with their
@@ -220,6 +248,33 @@ func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.G
 		return fmt.Errorf("iterate participants: %w", err)
 	}
 	return nil
+}
+
+// insertParticipants writes the participants of a game inside the caller's
+// transaction, so that Create and any later rewrite share one implementation.
+func insertParticipants(ctx context.Context, tx *sql.Tx, game *model.Game) (int, error) {
+	const query = `INSERT INTO game_deck (game_id, deck_id, result_type_id, player, win_description)
+	               VALUES (?, ?, ?, ?, ?)`
+
+	for _, participant := range game.Decks {
+		_, err := tx.ExecContext(ctx, query, game.ID, participant.DeckID,
+			participant.ResultTypeID, nullIfEmpty(participant.Player), nullIfEmpty(participant.WinDescription))
+		if err != nil {
+			switch {
+			case isUniqueViolation(err):
+				return 0, fmt.Errorf("add deck %d to game %d: %w",
+					participant.DeckID, game.ID, edherrors.ErrDeckAlreadyInGame)
+			case isForeignKeyViolation(err):
+				// The game was inserted by this transaction, so the only foreign key
+				// a participation can break is deck_id.
+				return 0, fmt.Errorf("add deck %d to game %d: %w",
+					participant.DeckID, game.ID, edherrors.ErrDeckNotFound)
+			default:
+				return 0, fmt.Errorf("add deck %d to game %d: %w", participant.DeckID, game.ID, err)
+			}
+		}
+	}
+	return len(game.Decks), nil
 }
 
 // Count returns how many games are stored.

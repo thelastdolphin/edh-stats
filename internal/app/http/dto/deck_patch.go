@@ -3,7 +3,6 @@ package dto
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/thelastdolphin/edh-stats/internal/app/model"
@@ -24,17 +23,9 @@ type PatchDeckRequest struct {
 // CreateDeckRequest does: " Deck " and "Deck" are the same deck and must not be
 // able to slip past the name+owner uniqueness rule.
 func (r *PatchDeckRequest) Normalize() {
-	trim := func(value *string) *string {
-		if value == nil {
-			return nil
-		}
-		trimmed := strings.TrimSpace(*value)
-		return &trimmed
-	}
-
-	r.Name = trim(r.Name)
-	r.Owner = trim(r.Owner)
-	r.Type = trim(r.Type)
+	r.Name = trimmed(r.Name)
+	r.Owner = trimmed(r.Owner)
+	r.Type = trimmed(r.Type)
 }
 
 // Validate reports the first problem found in the payload.

@@ -462,3 +462,108 @@ func TestGameRepository_DeckStats_DateRange(t *testing.T) {
 		})
 	}
 }
+
+func TestGameRepository_Update(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	deck := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	game := mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-02-07", Notes: "combo",
+		Decks: []*model.GameDeck{{DeckID: deck.ID, Player: "tester"}},
+	})
+
+	game.PlayedAt = "2026-05-23"
+	game.Notes = "combat damage"
+	if err := store.Game().Update(ctx, game); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	got, err := store.Game().GetByID(ctx, game.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.PlayedAt != "2026-05-23" || got.Notes != "combat damage" {
+		t.Errorf("game = %+v, want the new date and notes", got)
+	}
+	if len(got.Decks) != 1 {
+		t.Errorf("participants = %d, want the update to leave them alone", len(got.Decks))
+	}
+}
+
+func TestGameRepository_Update_NotFound(t *testing.T) {
+	store := newTestStore(t)
+
+	err := store.Game().Update(context.Background(), &model.Game{ID: 999999, PlayedAt: "2026-02-07"})
+	if !errors.Is(err, edherrors.ErrGameNotFound) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrGameNotFound", err)
+	}
+}
+
+func TestGameRepository_UpdateParticipant(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mine := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	opponent := mustCreateDeck(t, store, "Opponent", "", "")
+	game := mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-02-07",
+		Decks:    []*model.GameDeck{{DeckID: mine.ID, Player: "tester"}, {DeckID: opponent.ID}},
+	})
+
+	loss := resultTypeID(t, store, "loss")
+	if err := store.Game().UpdateParticipant(ctx, game.ID, opponent.ID, "Ivan", loss); err != nil {
+		t.Fatalf("UpdateParticipant: %v", err)
+	}
+
+	got, err := store.Game().GetByID(ctx, game.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Decks[1].Player != "Ivan" || got.Decks[1].ResultTypeID == nil || *got.Decks[1].ResultTypeID != *loss {
+		t.Errorf("participation = %+v", got.Decks[1])
+	}
+	if got.Decks[0].Player != "tester" {
+		t.Error("the other participation was changed")
+	}
+
+	// nil clears the result: a value here, not "leave it alone".
+	if err := store.Game().UpdateParticipant(ctx, game.ID, opponent.ID, "Ivan", nil); err != nil {
+		t.Fatalf("UpdateParticipant: %v", err)
+	}
+	got, err = store.Game().GetByID(ctx, game.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Decks[1].ResultTypeID != nil {
+		t.Errorf("the result was not cleared: %+v", got.Decks[1])
+	}
+}
+
+func TestGameRepository_UpdateParticipant_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	first := mustCreateDeck(t, store, "First", "tester", "control")
+	second := mustCreateDeck(t, store, "Second", "", "")
+	game := mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-02-07",
+		Decks:    []*model.GameDeck{{DeckID: first.ID}, {DeckID: second.ID}},
+	})
+
+	err := store.Game().UpdateParticipant(ctx, game.ID, 999999, "Ivan", nil)
+	if !errors.Is(err, edherrors.ErrParticipantNotFound) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrParticipantNotFound", err)
+	}
+
+	// A deck of another game is not a participation of this one either.
+	other := mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-02-08",
+		Decks:    []*model.GameDeck{{DeckID: first.ID}, {DeckID: second.ID}},
+	})
+	stranger := mustCreateDeck(t, store, "Stranger", "", "")
+	err = store.Game().UpdateParticipant(ctx, other.ID, stranger.ID, "Ivan", nil)
+	if !errors.Is(err, edherrors.ErrParticipantNotFound) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrParticipantNotFound", err)
+	}
+}
