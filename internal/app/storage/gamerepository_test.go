@@ -143,7 +143,7 @@ func TestGameRepository_Create_IsAtomic(t *testing.T) {
 				t.Fatal("expected an error")
 			}
 
-			count, err := store.Game().Count(ctx)
+			count, err := store.Game().Count(ctx, GameFilters{})
 			if err != nil {
 				t.Fatalf("Count: %v", err)
 			}
@@ -591,5 +591,81 @@ func TestGameRepository_FillsDeckNames(t *testing.T) {
 	// A deck without an owner reports an empty one rather than failing to scan.
 	if got.Decks[1].DeckName != "Opponent" || got.Decks[1].DeckOwner != "" {
 		t.Errorf("second participant = %+v", got.Decks[1])
+	}
+}
+
+func TestDeckRepository_Count(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mustCreateDeck(t, store, "Clement Frogs", "Andrew Kornilov", "control")
+	mustCreateDeck(t, store, "Wilhelt Zombies", "Ivan", "tribal")
+	mustCreateDeck(t, store, "Marchesa Aikido", "Andrew Kornilov", "control")
+
+	for name, tc := range map[string]struct {
+		filters DeckFilters
+		want    int
+	}{
+		"everything":      {DeckFilters{}, 3},
+		"by search":       {DeckFilters{Search: "frog"}, 1},
+		"by owner":        {DeckFilters{Owner: "Andrew Kornilov"}, 2},
+		"search and type": {DeckFilters{Search: "a", Type: "control"}, 2},
+		"nothing":         {DeckFilters{Search: "zzz"}, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := store.Deck().Count(ctx, tc.filters)
+			if err != nil {
+				t.Fatalf("Count: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("count = %d, want %d", got, tc.want)
+			}
+		})
+	}
+
+	// Pagination does not change the total: it is the size of the whole result.
+	got, err := store.Deck().Count(ctx, DeckFilters{Limit: 1, Page: 2})
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if got != 3 {
+		t.Errorf("count with pagination = %d, want 3", got)
+	}
+}
+
+func TestGameRepository_Count(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mine := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	opponent := mustCreateDeck(t, store, "Opponent", "", "")
+
+	for _, date := range []string{"2026-02-07", "2026-05-23", "2026-10-10"} {
+		mustCreateGame(t, store, &model.Game{
+			PlayedAt: date,
+			Decks:    []*model.GameDeck{{DeckID: mine.ID, Player: "tester"}, {DeckID: opponent.ID}},
+		})
+	}
+
+	for name, tc := range map[string]struct {
+		filters GameFilters
+		want    int
+	}{
+		"everything":  {GameFilters{}, 3},
+		"by deck":     {GameFilters{DeckID: mine.ID}, 3},
+		"by player":   {GameFilters{Player: "tester"}, 3},
+		"by a date":   {GameFilters{From: "2026-05-23"}, 2},
+		"outside":     {GameFilters{From: "2027-01-01"}, 0},
+		"with paging": {GameFilters{Limit: 1}, 3},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := store.Game().Count(ctx, tc.filters)
+			if err != nil {
+				t.Fatalf("Count: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("count = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

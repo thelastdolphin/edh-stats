@@ -254,3 +254,42 @@ func resultID(t *testing.T, store *storage.Store, name string) *int64 {
 	}
 	return &id
 }
+
+// TestListGames_TotalCount is the same header on the game listing, filters included.
+func TestListGames_TotalCount(t *testing.T) {
+	store := newTestStore(t)
+	mine := mustCreateDeck(t, store, "My Deck", "Andrew Kornilov")
+	opponent := mustCreateDeck(t, store, "Opponent", "")
+
+	for _, date := range []string{"2026-02-07", "2026-05-23", "2026-10-10"} {
+		mustCreateGame(t, store, &model.Game{
+			PlayedAt: date,
+			Decks:    []*model.GameDeck{{DeckID: mine.ID, Player: "Andrew Kornilov"}, {DeckID: opponent.ID}},
+		})
+	}
+
+	mux := newTestMux(store)
+	for name, tc := range map[string]struct {
+		target string
+		total  string
+		items  int
+	}{
+		"the first page of two": {"?limit=2", "3", 2},
+		"a date range":          {"?from=2026-03-01", "2", 2},
+		"a deck filter":         {fmt.Sprintf("?deck_id=%d", opponent.ID), "3", 3},
+		"nothing matches":       {"?from=2027-01-01", "0", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := get(t, mux, "/games"+tc.target)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body: %s)", recorder.Code, http.StatusOK, recorder.Body)
+			}
+			if got := recorder.Header().Get("X-Total-Count"); got != tc.total {
+				t.Errorf("X-Total-Count = %q, want %q", got, tc.total)
+			}
+			if got := len(decodeGames(t, recorder)); got != tc.items {
+				t.Errorf("items = %d, want %d", got, tc.items)
+			}
+		})
+	}
+}

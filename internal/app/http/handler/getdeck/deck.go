@@ -59,19 +59,32 @@ func ListDecks(store *storage.Store) http.HandlerFunc {
 			return
 		}
 
-		decks, err := store.Deck().List(r.Context(), storage.DeckFilters{
+		filters := storage.DeckFilters{
 			Name:   q.Get("name"),
 			Owner:  q.Get("owner"),
 			Type:   q.Get("type"),
 			Search: strings.TrimSpace(q.Get("search")),
 			Page:   page,
 			Limit:  limit,
-		})
+		}
+
+		decks, err := store.Deck().List(r.Context(), filters)
 		if err != nil {
 			log.Printf("list decks: %v", err)
 			httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			return
 		}
+
+		// The size of the whole result, so that a client can say "page 2 of 5" instead
+		// of inferring the end from a page that came back short.
+		total, err := store.Deck().Count(r.Context(), filters)
+		if err != nil {
+			log.Printf("count decks: %v", err)
+			httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
+			return
+		}
+
+		w.Header().Set("X-Total-Count", strconv.Itoa(total))
 		httpUtils.JSONEncode(w, http.StatusOK, decks)
 	}
 }

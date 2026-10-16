@@ -144,6 +144,18 @@ func (dr *DeckRepository) List(ctx context.Context, filters DeckFilters) ([]*mod
 	return decks, nil
 }
 
+// Count returns how many decks match the filters, ignoring pagination.
+func (dr *DeckRepository) Count(ctx context.Context, filters DeckFilters) (int, error) {
+	conditions, args := deckConditions(filters)
+
+	var count int
+	if err := dr.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM decks WHERE 1=1`+conditions, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count decks: %w", err)
+	}
+	return count, nil
+}
+
 // deckConditions builds the WHERE clause shared by List and Count.
 //
 // The fragments are constants and the values travel as placeholders, so the

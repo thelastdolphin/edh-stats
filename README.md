@@ -47,6 +47,10 @@ token is configured the service logs a warning at startup.
 Request bodies are limited to 1 MiB. An unknown path answers `404`, and a known
 path with the wrong method answers `405` (with an `Allow` header).
 
+Both listings report the size of the whole result in the `X-Total-Count` header, so a
+client can show "page 2 of 5" instead of inferring the end from a short page. The
+count follows the filters and ignores the pagination.
+
 Errors are JSON objects with a machine-readable code and a message meant for a human:
 
 ```json

@@ -185,7 +185,7 @@ func TestGame_RejectsBadPayloads(t *testing.T) {
 func assertNothingStored(t *testing.T, store *storage.Store) {
 	t.Helper()
 
-	count, err := store.Game().Count(context.Background())
+	count, err := store.Game().Count(context.Background(), storage.GameFilters{})
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}

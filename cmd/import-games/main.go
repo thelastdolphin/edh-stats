@@ -74,7 +74,7 @@ func run(ctx context.Context, opts options) error {
 	}
 	defer func() { _ = store.Close() }()
 
-	existing, err := store.Game().Count(ctx)
+	existing, err := store.Game().Count(ctx, storage.GameFilters{})
 	if err != nil {
 		return err
 	}

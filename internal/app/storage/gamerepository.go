@@ -135,32 +135,11 @@ func (gr *GameRepository) UpdateParticipant(ctx context.Context, gameID, deckID 
 // List returns the games matching the filters, newest first, with their
 // participants already loaded.
 func (gr *GameRepository) List(ctx context.Context, filters GameFilters) ([]*model.Game, error) {
-	query := `SELECT id, date(played_at), notes FROM games WHERE 1=1`
-	var args []any
-
-	// The fragments below are constants and the values travel as placeholders,
-	// so the concatenation cannot introduce SQL injection.
-	if filters.DeckID > 0 {
-		query += ` AND id IN (SELECT game_id FROM game_deck WHERE deck_id = ?)`
-		args = append(args, filters.DeckID)
-	}
-	if filters.Player != "" {
-		query += ` AND id IN (SELECT game_id FROM game_deck WHERE player = ?)`
-		args = append(args, filters.Player)
-	}
-	// played_at holds an ISO date, which compares correctly as text, so the bounds
-	// are plain comparisons: wrapping the column in date() would stop SQLite from
-	// using games_played_at_idx.
-	if filters.From != "" {
-		query += ` AND played_at >= ?`
-		args = append(args, filters.From)
-	}
-	if filters.To != "" {
-		query += ` AND played_at <= ?`
-		args = append(args, filters.To)
-	}
+	conditions, args := gameConditions(filters)
 
 	filters = filters.Clamp()
+
+	query := `SELECT id, date(played_at), notes FROM games WHERE 1=1` + conditions
 
 	// Newest first: a listing is read from the most recent game backwards, and the
 	// played_at index serves this order.
@@ -283,13 +262,48 @@ func insertParticipants(ctx context.Context, tx *sql.Tx, game *model.Game) (int,
 	return len(game.Decks), nil
 }
 
-// Count returns how many games are stored.
-func (gr *GameRepository) Count(ctx context.Context) (int, error) {
+// Count returns how many games match the filters, ignoring pagination, so that a
+// listing can report the size of the whole result rather than of one page.
+func (gr *GameRepository) Count(ctx context.Context, filters GameFilters) (int, error) {
+	conditions, args := gameConditions(filters)
+
 	var count int
-	if err := gr.db.QueryRowContext(ctx, `SELECT count(*) FROM games`).Scan(&count); err != nil {
+	if err := gr.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM games WHERE 1=1`+conditions, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count games: %w", err)
 	}
 	return count, nil
+}
+
+// gameConditions builds the WHERE clause shared by List and Count.
+//
+// The fragments are constants and the values travel as placeholders, so the
+// concatenation cannot introduce SQL injection.
+func gameConditions(filters GameFilters) (string, []any) {
+	conditions := ""
+	var args []any
+
+	if filters.DeckID > 0 {
+		conditions += ` AND id IN (SELECT game_id FROM game_deck WHERE deck_id = ?)`
+		args = append(args, filters.DeckID)
+	}
+	if filters.Player != "" {
+		conditions += ` AND id IN (SELECT game_id FROM game_deck WHERE player = ?)`
+		args = append(args, filters.Player)
+	}
+	// played_at holds an ISO date, which compares correctly as text, so the bounds
+	// are plain comparisons: wrapping the column in date() would stop SQLite from
+	// using games_played_at_idx.
+	if filters.From != "" {
+		conditions += ` AND played_at >= ?`
+		args = append(args, filters.From)
+	}
+	if filters.To != "" {
+		conditions += ` AND played_at <= ?`
+		args = append(args, filters.To)
+	}
+
+	return conditions, args
 }
 
 // ResultTypeIDs returns the result type names mapped to their IDs.
