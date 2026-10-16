@@ -77,19 +77,32 @@ func ListGames(store *storage.Store) http.HandlerFunc {
 			return
 		}
 
-		games, err := store.Game().List(r.Context(), storage.GameFilters{
+		filters := storage.GameFilters{
 			DeckID: deckID,
 			Player: q.Get("player"),
 			From:   from,
 			To:     to,
 			Page:   page,
 			Limit:  limit,
-		})
+		}
+
+		games, err := store.Game().List(r.Context(), filters)
 		if err != nil {
 			log.Printf("list games: %v", err)
 			httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
 			return
 		}
+
+		// The size of the whole result, so that a client can say "page 2 of 5" instead
+		// of inferring the end from a page that came back short.
+		total, err := store.Game().Count(r.Context(), filters)
+		if err != nil {
+			log.Printf("count games: %v", err)
+			httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
+			return
+		}
+
+		w.Header().Set("X-Total-Count", strconv.Itoa(total))
 		httpUtils.JSONEncode(w, http.StatusOK, games)
 	}
 }

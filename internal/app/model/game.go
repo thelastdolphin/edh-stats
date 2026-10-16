@@ -19,8 +19,15 @@ type Game struct {
 // The player belongs here rather than on the deck: the same deck can be lent out
 // and piloted by somebody else, and pointing at the participation also answers
 // which of the participants is the owner of the statistics.
+//
+// DeckName and DeckOwner are read from the deck the participation refers to. They are
+// filled in whenever a game is read or listed, and ignored when one is written, so
+// that a client showing a game does not have to fetch the whole deck list just to put
+// names next to the identifiers.
 type GameDeck struct {
 	DeckID         int64  `json:"deck_id"`
+	DeckName       string `json:"deck_name,omitempty"`
+	DeckOwner      string `json:"deck_owner,omitempty"`
 	Player         string `json:"player,omitempty"`
 	ResultTypeID   *int64 `json:"result_type_id,omitempty"`
 	WinDescription string `json:"win_description,omitempty"`

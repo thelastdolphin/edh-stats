@@ -219,7 +219,7 @@ func TestApplyPlan_WritesDecksAndGames(t *testing.T) {
 		t.Fatalf("applyPlan: %v", err)
 	}
 
-	count, err := store.Game().Count(ctx)
+	count, err := store.Game().Count(ctx, storage.GameFilters{})
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}

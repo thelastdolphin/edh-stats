@@ -51,25 +51,8 @@ func (gr *GameRepository) Create(ctx context.Context, game *model.Game) (*model.
 	}
 	game.ID = id
 
-	const insertParticipant = `INSERT INTO game_deck (game_id, deck_id, result_type_id, player, win_description)
-	                           VALUES (?, ?, ?, ?, ?)`
-	for _, participant := range game.Decks {
-		_, err := tx.ExecContext(ctx, insertParticipant, game.ID, participant.DeckID,
-			participant.ResultTypeID, nullIfEmpty(participant.Player), nullIfEmpty(participant.WinDescription))
-		if err != nil {
-			switch {
-			case isUniqueViolation(err):
-				return nil, fmt.Errorf("add deck %d to game %d: %w",
-					participant.DeckID, game.ID, edherrors.ErrDeckAlreadyInGame)
-			case isForeignKeyViolation(err):
-				// The game was inserted by this transaction, so the only foreign key
-				// a participation can break is deck_id.
-				return nil, fmt.Errorf("add deck %d to game %d: %w",
-					participant.DeckID, game.ID, edherrors.ErrDeckNotFound)
-			default:
-				return nil, fmt.Errorf("add deck %d to game %d: %w", participant.DeckID, game.ID, err)
-			}
-		}
+	if _, err := insertParticipants(ctx, tx, game); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -104,35 +87,59 @@ func (gr *GameRepository) GetByID(ctx context.Context, id int64) (*model.Game, e
 	return game, nil
 }
 
+// Update stores the date and the notes of an existing game.
+//
+// The participants are not touched: they have UpdateParticipant of their own, which
+// is what keeps a corrected result from wiping the others.
+func (gr *GameRepository) Update(ctx context.Context, game *model.Game) error {
+	const query = `UPDATE games SET played_at = ?, notes = ? WHERE id = ?`
+
+	result, err := gr.db.ExecContext(ctx, query, game.PlayedAt, nullIfEmpty(game.Notes), game.ID)
+	if err != nil {
+		return fmt.Errorf("update game %d: %w", game.ID, err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update game %d: %w", game.ID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("update game %d: %w", game.ID, edherrors.ErrGameNotFound)
+	}
+	return nil
+}
+
+// UpdateParticipant changes who piloted a deck in a game and with what result.
+//
+// resultTypeID is a pointer because the column is nullable: nil clears the result,
+// which is the normal state of every participation except the one belonging to the
+// player keeping the statistics.
+func (gr *GameRepository) UpdateParticipant(ctx context.Context, gameID, deckID int64, player string, resultTypeID *int64) error {
+	const query = `UPDATE game_deck SET player = ?, result_type_id = ? WHERE game_id = ? AND deck_id = ?`
+
+	result, err := gr.db.ExecContext(ctx, query, nullIfEmpty(player), resultTypeID, gameID, deckID)
+	if err != nil {
+		return fmt.Errorf("update deck %d in game %d: %w", deckID, gameID, err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update deck %d in game %d: %w", deckID, gameID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("update deck %d in game %d: %w", deckID, gameID, edherrors.ErrParticipantNotFound)
+	}
+	return nil
+}
+
 // List returns the games matching the filters, newest first, with their
 // participants already loaded.
 func (gr *GameRepository) List(ctx context.Context, filters GameFilters) ([]*model.Game, error) {
-	query := `SELECT id, date(played_at), notes FROM games WHERE 1=1`
-	var args []any
-
-	// The fragments below are constants and the values travel as placeholders,
-	// so the concatenation cannot introduce SQL injection.
-	if filters.DeckID > 0 {
-		query += ` AND id IN (SELECT game_id FROM game_deck WHERE deck_id = ?)`
-		args = append(args, filters.DeckID)
-	}
-	if filters.Player != "" {
-		query += ` AND id IN (SELECT game_id FROM game_deck WHERE player = ?)`
-		args = append(args, filters.Player)
-	}
-	// played_at holds an ISO date, which compares correctly as text, so the bounds
-	// are plain comparisons: wrapping the column in date() would stop SQLite from
-	// using games_played_at_idx.
-	if filters.From != "" {
-		query += ` AND played_at >= ?`
-		args = append(args, filters.From)
-	}
-	if filters.To != "" {
-		query += ` AND played_at <= ?`
-		args = append(args, filters.To)
-	}
+	conditions, args := gameConditions(filters)
 
 	filters = filters.Clamp()
+
+	query := `SELECT id, date(played_at), notes FROM games WHERE 1=1` + conditions
 
 	// Newest first: a listing is read from the most recent game backwards, and the
 	// played_at index serves this order.
@@ -175,8 +182,13 @@ func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.G
 	}
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(games)), ",")
-	query := `SELECT game_id, deck_id, player, result_type_id, win_description
-	            FROM game_deck WHERE game_id IN (` + placeholders + `) ORDER BY id`
+	// The deck is joined so that a client can put names next to the identifiers; its
+	// owner is nullable, and a NULL would not scan into a string.
+	query := `SELECT gd.game_id, gd.deck_id, d.name, COALESCE(d.owner, ''),
+	                 gd.player, gd.result_type_id, gd.win_description
+	            FROM game_deck gd
+	            JOIN decks d ON d.id = gd.deck_id
+	           WHERE gd.game_id IN (` + placeholders + `) ORDER BY gd.id`
 
 	args := make([]any, 0, len(games))
 	byID := make(map[int64]*model.Game, len(games))
@@ -199,7 +211,8 @@ func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.G
 			resultTypeID   sql.NullInt64
 			winDescription sql.NullString
 		)
-		if err := rows.Scan(&gameID, &participant.DeckID, &player, &resultTypeID, &winDescription); err != nil {
+		if err := rows.Scan(&gameID, &participant.DeckID, &participant.DeckName, &participant.DeckOwner,
+			&player, &resultTypeID, &winDescription); err != nil {
 			return fmt.Errorf("scan participant: %w", err)
 		}
 
@@ -222,13 +235,75 @@ func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.G
 	return nil
 }
 
-// Count returns how many games are stored.
-func (gr *GameRepository) Count(ctx context.Context) (int, error) {
+// insertParticipants writes the participants of a game inside the caller's
+// transaction, so that Create and any later rewrite share one implementation.
+func insertParticipants(ctx context.Context, tx *sql.Tx, game *model.Game) (int, error) {
+	const query = `INSERT INTO game_deck (game_id, deck_id, result_type_id, player, win_description)
+	               VALUES (?, ?, ?, ?, ?)`
+
+	for _, participant := range game.Decks {
+		_, err := tx.ExecContext(ctx, query, game.ID, participant.DeckID,
+			participant.ResultTypeID, nullIfEmpty(participant.Player), nullIfEmpty(participant.WinDescription))
+		if err != nil {
+			switch {
+			case isUniqueViolation(err):
+				return 0, fmt.Errorf("add deck %d to game %d: %w",
+					participant.DeckID, game.ID, edherrors.ErrDeckAlreadyInGame)
+			case isForeignKeyViolation(err):
+				// The game was inserted by this transaction, so the only foreign key
+				// a participation can break is deck_id.
+				return 0, fmt.Errorf("add deck %d to game %d: %w",
+					participant.DeckID, game.ID, edherrors.ErrDeckNotFound)
+			default:
+				return 0, fmt.Errorf("add deck %d to game %d: %w", participant.DeckID, game.ID, err)
+			}
+		}
+	}
+	return len(game.Decks), nil
+}
+
+// Count returns how many games match the filters, ignoring pagination, so that a
+// listing can report the size of the whole result rather than of one page.
+func (gr *GameRepository) Count(ctx context.Context, filters GameFilters) (int, error) {
+	conditions, args := gameConditions(filters)
+
 	var count int
-	if err := gr.db.QueryRowContext(ctx, `SELECT count(*) FROM games`).Scan(&count); err != nil {
+	if err := gr.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM games WHERE 1=1`+conditions, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count games: %w", err)
 	}
 	return count, nil
+}
+
+// gameConditions builds the WHERE clause shared by List and Count.
+//
+// The fragments are constants and the values travel as placeholders, so the
+// concatenation cannot introduce SQL injection.
+func gameConditions(filters GameFilters) (string, []any) {
+	conditions := ""
+	var args []any
+
+	if filters.DeckID > 0 {
+		conditions += ` AND id IN (SELECT game_id FROM game_deck WHERE deck_id = ?)`
+		args = append(args, filters.DeckID)
+	}
+	if filters.Player != "" {
+		conditions += ` AND id IN (SELECT game_id FROM game_deck WHERE player = ?)`
+		args = append(args, filters.Player)
+	}
+	// played_at holds an ISO date, which compares correctly as text, so the bounds
+	// are plain comparisons: wrapping the column in date() would stop SQLite from
+	// using games_played_at_idx.
+	if filters.From != "" {
+		conditions += ` AND played_at >= ?`
+		args = append(args, filters.From)
+	}
+	if filters.To != "" {
+		conditions += ` AND played_at <= ?`
+		args = append(args, filters.To)
+	}
+
+	return conditions, args
 }
 
 // ResultTypeIDs returns the result type names mapped to their IDs.

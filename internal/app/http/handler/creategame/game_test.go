@@ -112,6 +112,11 @@ func TestGame_CreatesTheGame(t *testing.T) {
 		}
 	}
 
+	// The response is the stored game, so it carries the deck names too.
+	if game.Decks[0].DeckName != "Clement Bounce" {
+		t.Errorf("the response has no deck name: %+v", game.Decks[0])
+	}
+
 	stored, err := store.Game().GetByID(context.Background(), game.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
@@ -180,7 +185,7 @@ func TestGame_RejectsBadPayloads(t *testing.T) {
 func assertNothingStored(t *testing.T, store *storage.Store) {
 	t.Helper()
 
-	count, err := store.Game().Count(context.Background())
+	count, err := store.Game().Count(context.Background(), storage.GameFilters{})
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}

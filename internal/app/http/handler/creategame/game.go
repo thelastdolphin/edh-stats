@@ -97,6 +97,15 @@ func Game(store *storage.Store) http.HandlerFunc {
 			return
 		}
 
+		// Read the game back so that the response carries the deck names of the
+		// participations, exactly like GET /games/{id} does. A failure here is not
+		// worth failing the request: the game is stored either way.
+		if stored, err := store.Game().GetByID(r.Context(), created.ID); err == nil {
+			created = stored
+		} else {
+			log.Printf("read game %d after storing it: %v", created.ID, err)
+		}
+
 		w.Header().Set("Location", "/games/"+strconv.FormatInt(created.ID, 10))
 		httpUtils.JSONEncode(w, http.StatusCreated, created)
 	}

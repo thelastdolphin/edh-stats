@@ -169,3 +169,77 @@ func TestListDecks_InvalidPagination(t *testing.T) {
 		}
 	}
 }
+
+// TestListDecks_Search covers the substring search the deck picker of a client is
+// built on.
+func TestListDecks_Search(t *testing.T) {
+	store := newTestStore(t)
+	mustCreateDeck(t, store, "Clement Frogs")
+	mustCreateDeck(t, store, "Wilhelt Zombies")
+	mux := newTestMux(store)
+
+	for name, tc := range map[string]struct {
+		target string
+		want   int
+	}{
+		"part of a name":       {"/decks?search=frog", 1},
+		"part of an owner":     {"/decks?search=test", 2},
+		"case does not matter": {"/decks?search=WILHELT", 1},
+		"nothing matches":      {"/decks?search=zzz", 0},
+		"the whole list":       {"/decks", 2},
+		"a wildcard is text":   {"/decks?search=_", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := get(t, mux, tc.target)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body: %s)", recorder.Code, http.StatusOK, recorder.Body)
+			}
+
+			var decks []model.Deck
+			if err := json.Unmarshal(recorder.Body.Bytes(), &decks); err != nil {
+				t.Fatalf("decode %q: %v", recorder.Body, err)
+			}
+			if len(decks) != tc.want {
+				t.Errorf("decks = %d, want %d", len(decks), tc.want)
+			}
+		})
+	}
+}
+
+// TestListDecks_TotalCount covers the header that lets a client page without guessing.
+func TestListDecks_TotalCount(t *testing.T) {
+	store := newTestStore(t)
+	mustCreateDeck(t, store, "Clement Frogs")
+	mustCreateDeck(t, store, "Wilhelt Zombies")
+	mustCreateDeck(t, store, "Marchesa Aikido")
+	mux := newTestMux(store)
+
+	for name, tc := range map[string]struct {
+		target string
+		total  string
+		items  int
+	}{
+		"the first page of two":  {"/decks?limit=2", "3", 2},
+		"the second page of two": {"/decks?limit=2&page=2", "3", 1},
+		"a narrow search":        {"/decks?search=frog", "1", 1},
+		"a search with no hits":  {"/decks?search=zzz", "0", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := get(t, mux, tc.target)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body: %s)", recorder.Code, http.StatusOK, recorder.Body)
+			}
+			if got := recorder.Header().Get("X-Total-Count"); got != tc.total {
+				t.Errorf("X-Total-Count = %q, want %q", got, tc.total)
+			}
+
+			var decks []model.Deck
+			if err := json.Unmarshal(recorder.Body.Bytes(), &decks); err != nil {
+				t.Fatalf("decode %q: %v", recorder.Body, err)
+			}
+			if len(decks) != tc.items {
+				t.Errorf("items = %d, want %d", len(decks), tc.items)
+			}
+		})
+	}
+}

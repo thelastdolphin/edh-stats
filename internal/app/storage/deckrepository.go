@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/mattn/go-sqlite3"
 
@@ -111,29 +112,14 @@ func (dr *DeckRepository) Delete(ctx context.Context, id int64) error {
 
 // List returns the decks matching the filters, ordered by ID and paginated.
 func (dr *DeckRepository) List(ctx context.Context, filters DeckFilters) ([]*model.Deck, error) {
-	query := `SELECT id, name, owner, type FROM decks WHERE 1=1`
-	var args []any
-
-	// The fragments below are constants and the values travel as placeholders,
-	// so the concatenation cannot introduce SQL injection.
-	if filters.Name != "" {
-		query += " AND name = ?"
-		args = append(args, filters.Name)
-	}
-	if filters.Owner != "" {
-		query += " AND owner = ?"
-		args = append(args, filters.Owner)
-	}
-	if filters.Type != "" {
-		query += " AND type = ?"
-		args = append(args, filters.Type)
-	}
+	conditions, args := deckConditions(filters)
 
 	filters = filters.Clamp()
 
 	// ORDER BY is what makes LIMIT/OFFSET meaningful: without it the database is
 	// free to return the same page with different rows on every request.
-	query += " ORDER BY id LIMIT ? OFFSET ?"
+	query := `SELECT id, name, owner, type FROM decks WHERE 1=1` + conditions +
+		` ORDER BY id LIMIT ? OFFSET ?`
 	args = append(args, filters.Limit, filters.Offset())
 
 	rows, err := dr.db.QueryContext(ctx, query, args...)
@@ -156,6 +142,59 @@ func (dr *DeckRepository) List(ctx context.Context, filters DeckFilters) ([]*mod
 		return nil, fmt.Errorf("iterate decks: %w", err)
 	}
 	return decks, nil
+}
+
+// Count returns how many decks match the filters, ignoring pagination.
+func (dr *DeckRepository) Count(ctx context.Context, filters DeckFilters) (int, error) {
+	conditions, args := deckConditions(filters)
+
+	var count int
+	if err := dr.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM decks WHERE 1=1`+conditions, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count decks: %w", err)
+	}
+	return count, nil
+}
+
+// deckConditions builds the WHERE clause shared by List and Count.
+//
+// The fragments are constants and the values travel as placeholders, so the
+// concatenation cannot introduce SQL injection.
+func deckConditions(filters DeckFilters) (string, []any) {
+	conditions := ""
+	var args []any
+
+	if filters.Name != "" {
+		conditions += " AND name = ?"
+		args = append(args, filters.Name)
+	}
+	if filters.Owner != "" {
+		conditions += " AND owner = ?"
+		args = append(args, filters.Owner)
+	}
+	if filters.Type != "" {
+		conditions += " AND type = ?"
+		args = append(args, filters.Type)
+	}
+	if filters.Search != "" {
+		// LIKE ignores case for ASCII, which is what deck names are written in; for
+		// other alphabets it compares exactly.
+		pattern := likePattern(filters.Search)
+		conditions += ` AND (name LIKE ? ESCAPE '\' OR owner LIKE ? ESCAPE '\')`
+		args = append(args, pattern, pattern)
+	}
+
+	return conditions, args
+}
+
+// likePattern turns a search term into a LIKE pattern.
+//
+// The wildcards of the term are escaped, so that searching for "100%" looks for that
+// text instead of matching every deck, and searching for "_" does not match the whole
+// table.
+func likePattern(term string) string {
+	escaper := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + escaper.Replace(term) + "%"
 }
 
 // isUniqueViolation reports whether err is a UNIQUE or PRIMARY KEY constraint
