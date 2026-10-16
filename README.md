@@ -27,6 +27,10 @@ startup, so a fresh database needs no manual preparation.
 | `GET`  | `/decks/{id}` | Returns one deck, or `404` when it does not exist.                                                                                                                             |
 | `PATCH` | `/decks/{id}` | Updates the given fields of a deck: `name`, `owner`, `type`. Only the fields present in the body are changed. `200` with the updated deck, `400` for invalid input, `404` when it does not exist, `409` when the resulting name+owner pair is already taken. |
 | `DELETE` | `/decks/{id}` | Deletes a deck: `204` on success, `404` when it does not exist, `409` when a game still refers to it.                                                                                    |
+| `POST` | `/games`      | Records a game. Body: `{"played_at":"2026-02-07","notes":"...","decks":[{"deck_id":1,"player":"...","result":"win"},{"deck_id":2}]}`. The first deck is the one recording the game and only its result is stored; `played_at` defaults to today and `result` is optional and must be `win`, `loss` or `draw`. `201` with a `Location` header, `400` for invalid input or an unknown deck. |
+| `GET`  | `/games`      | Lists games, newest first, each with its participants. Query parameters: `deck_id`, `player`, `from`, `to` (inclusive `YYYY-MM-DD`), `page`, `limit`. Returns `[]` when nothing matches. |
+| `GET`  | `/games/{id}` | Returns one game with its participants, or `404` when it does not exist. |
+| `DELETE` | `/games/{id}` | Deletes a game together with its participants: `204` on success, `404` when it does not exist. |
 | `GET`  | `/health`     | `200` while the database answers, `503` otherwise.                                                                                                                             |
 
 Request bodies are limited to 1 MiB. An unknown path answers `404`, and a known

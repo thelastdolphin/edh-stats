@@ -6,10 +6,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
-// isoDate is the layout games are stored in.
-const isoDate = "2006-01-02"
+	"github.com/thelastdolphin/edh-stats/internal/app/model"
+)
 
 // entry is one game as written in the log.
 type entry struct {
@@ -60,7 +59,7 @@ func parseLog(text string) ([]entry, error) {
 			if err != nil {
 				return nil, fmt.Errorf("line %d: %q is not a date", number+1, line)
 			}
-			date = parsed.Format(isoDate)
+			date = parsed.Format(model.DateLayout)
 			continue
 		}
 

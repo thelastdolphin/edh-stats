@@ -5,15 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thelastdolphin/edh-stats/internal/app/edherrors"
 	"github.com/thelastdolphin/edh-stats/internal/app/model"
 )
-
-// isoDate is the layout of games.played_at. The recorded data is a calendar date,
-// and ISO dates also compare correctly as text.
-const isoDate = "2006-01-02"
 
 // GameRepository reads and writes games and their participants.
 type GameRepository struct {
@@ -28,8 +25,11 @@ type GameRepository struct {
 func (gr *GameRepository) Create(ctx context.Context, game *model.Game) (*model.Game, error) {
 	playedAt := game.PlayedAt
 	if playedAt == "" {
-		playedAt = time.Now().Format(isoDate)
+		playedAt = time.Now().Format(model.DateLayout)
 	}
+	// Keep the game in step with the row that is about to be written: without this
+	// the caller - and therefore the response - would still carry the empty date.
+	game.PlayedAt = playedAt
 
 	tx, err := gr.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -57,11 +57,18 @@ func (gr *GameRepository) Create(ctx context.Context, game *model.Game) (*model.
 		_, err := tx.ExecContext(ctx, insertParticipant, game.ID, participant.DeckID,
 			participant.ResultTypeID, nullIfEmpty(participant.Player), nullIfEmpty(participant.WinDescription))
 		if err != nil {
-			if isUniqueViolation(err) {
+			switch {
+			case isUniqueViolation(err):
 				return nil, fmt.Errorf("add deck %d to game %d: %w",
 					participant.DeckID, game.ID, edherrors.ErrDeckAlreadyInGame)
+			case isForeignKeyViolation(err):
+				// The game was inserted by this transaction, so the only foreign key
+				// a participation can break is deck_id.
+				return nil, fmt.Errorf("add deck %d to game %d: %w",
+					participant.DeckID, game.ID, edherrors.ErrDeckNotFound)
+			default:
+				return nil, fmt.Errorf("add deck %d to game %d: %w", participant.DeckID, game.ID, err)
 			}
-			return nil, fmt.Errorf("add deck %d to game %d: %w", participant.DeckID, game.ID, err)
 		}
 	}
 
@@ -90,25 +97,110 @@ func (gr *GameRepository) GetByID(ctx context.Context, id int64) (*model.Game, e
 	}
 	game.Notes = notes.String
 
-	const participantsQuery = `SELECT deck_id, player, result_type_id, win_description
-	                             FROM game_deck WHERE game_id = ? ORDER BY id`
-	rows, err := gr.db.QueryContext(ctx, participantsQuery, id)
+	game.Decks = make([]*model.GameDeck, 0, 4)
+	if err := gr.loadParticipants(ctx, []*model.Game{game}); err != nil {
+		return nil, err
+	}
+	return game, nil
+}
+
+// List returns the games matching the filters, newest first, with their
+// participants already loaded.
+func (gr *GameRepository) List(ctx context.Context, filters GameFilters) ([]*model.Game, error) {
+	query := `SELECT id, date(played_at), notes FROM games WHERE 1=1`
+	var args []any
+
+	// The fragments below are constants and the values travel as placeholders,
+	// so the concatenation cannot introduce SQL injection.
+	if filters.DeckID > 0 {
+		query += ` AND id IN (SELECT game_id FROM game_deck WHERE deck_id = ?)`
+		args = append(args, filters.DeckID)
+	}
+	if filters.Player != "" {
+		query += ` AND id IN (SELECT game_id FROM game_deck WHERE player = ?)`
+		args = append(args, filters.Player)
+	}
+	// played_at holds an ISO date, which compares correctly as text, so the bounds
+	// are plain comparisons: wrapping the column in date() would stop SQLite from
+	// using games_played_at_idx.
+	if filters.From != "" {
+		query += ` AND played_at >= ?`
+		args = append(args, filters.From)
+	}
+	if filters.To != "" {
+		query += ` AND played_at <= ?`
+		args = append(args, filters.To)
+	}
+
+	filters = filters.Clamp()
+
+	// Newest first: a listing is read from the most recent game backwards, and the
+	// played_at index serves this order.
+	query += ` ORDER BY played_at DESC, id DESC LIMIT ? OFFSET ?`
+	args = append(args, filters.Limit, filters.Offset())
+
+	rows, err := gr.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("select participants of game %d: %w", id, err)
+		return nil, fmt.Errorf("select games: %w", err)
 	}
 	defer rows.Close()
 
-	// A non-nil slice so that an empty result encodes as [] rather than null.
-	game.Decks = make([]*model.GameDeck, 0, 4)
+	// Start from an empty slice so an empty result is encoded as [] rather than null.
+	games := make([]*model.Game, 0, filters.Limit)
+	for rows.Next() {
+		game := &model.Game{}
+		var notes sql.NullString
+		if err := rows.Scan(&game.ID, &game.PlayedAt, &notes); err != nil {
+			return nil, fmt.Errorf("scan game: %w", err)
+		}
+		game.Notes = notes.String
+		game.Decks = make([]*model.GameDeck, 0, 4)
+		games = append(games, game)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate games: %w", err)
+	}
+
+	if err := gr.loadParticipants(ctx, games); err != nil {
+		return nil, err
+	}
+	return games, nil
+}
+
+// loadParticipants fills in the participants of the given games with a single
+// query, instead of one query per game.
+func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.Game) error {
+	if len(games) == 0 {
+		return nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(games)), ",")
+	query := `SELECT game_id, deck_id, player, result_type_id, win_description
+	            FROM game_deck WHERE game_id IN (` + placeholders + `) ORDER BY id`
+
+	args := make([]any, 0, len(games))
+	byID := make(map[int64]*model.Game, len(games))
+	for _, game := range games {
+		args = append(args, game.ID)
+		byID[game.ID] = game
+	}
+
+	rows, err := gr.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("select participants: %w", err)
+	}
+	defer rows.Close()
+
 	for rows.Next() {
 		var (
+			gameID         int64
 			participant    model.GameDeck
 			player         sql.NullString
 			resultTypeID   sql.NullInt64
 			winDescription sql.NullString
 		)
-		if err := rows.Scan(&participant.DeckID, &player, &resultTypeID, &winDescription); err != nil {
-			return nil, fmt.Errorf("scan participant of game %d: %w", id, err)
+		if err := rows.Scan(&gameID, &participant.DeckID, &player, &resultTypeID, &winDescription); err != nil {
+			return fmt.Errorf("scan participant: %w", err)
 		}
 
 		participant.Player = player.String
@@ -117,12 +209,17 @@ func (gr *GameRepository) GetByID(ctx context.Context, id int64) (*model.Game, e
 			id := resultTypeID.Int64
 			participant.ResultTypeID = &id
 		}
+
+		game, ok := byID[gameID]
+		if !ok {
+			return fmt.Errorf("participant of game %d selected for another game", gameID)
+		}
 		game.Decks = append(game.Decks, &participant)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate participants of game %d: %w", id, err)
+		return fmt.Errorf("iterate participants: %w", err)
 	}
-	return game, nil
+	return nil
 }
 
 // Count returns how many games are stored.

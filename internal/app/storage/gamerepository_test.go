@@ -248,3 +248,114 @@ func TestGameRepository_ResultTypeIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestGameRepository_List(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mine := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	opponent := mustCreateDeck(t, store, "Opponent", "", "")
+
+	first := mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-02-07",
+		Decks:    []*model.GameDeck{{DeckID: mine.ID, Player: "tester"}, {DeckID: opponent.ID}},
+	})
+	second := mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-10-10", Notes: "combo",
+		Decks: []*model.GameDeck{{DeckID: mine.ID, Player: "tester"}, {DeckID: opponent.ID}},
+	})
+
+	games, err := store.Game().List(ctx, GameFilters{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(games) != 2 {
+		t.Fatalf("games = %d, want 2", len(games))
+	}
+	if games[0].ID != second.ID || games[1].ID != first.ID {
+		t.Errorf("order = %d then %d, want newest first", games[0].ID, games[1].ID)
+	}
+	if len(games[0].Decks) != 2 {
+		t.Errorf("participants of the first game = %d, want 2", len(games[0].Decks))
+	}
+	if games[0].Notes != "combo" {
+		t.Errorf("notes = %q, want combo", games[0].Notes)
+	}
+
+	// An empty result has to be an empty slice, so that it encodes as [] and not null.
+	none, err := store.Game().List(ctx, GameFilters{Player: "nobody"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if none == nil {
+		t.Error("an empty listing returned nil instead of an empty slice")
+	}
+	if len(none) != 0 {
+		t.Errorf("games for an unknown player = %d, want 0", len(none))
+	}
+}
+
+func TestGameRepository_List_Filters(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mine := mustCreateDeck(t, store, "My Deck", "tester", "control")
+	opponent := mustCreateDeck(t, store, "Opponent", "", "")
+	other := mustCreateDeck(t, store, "Other", "", "")
+
+	mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-02-07",
+		Decks:    []*model.GameDeck{{DeckID: mine.ID, Player: "tester"}, {DeckID: opponent.ID}},
+	})
+	mustCreateGame(t, store, &model.Game{
+		PlayedAt: "2026-05-23",
+		Decks: []*model.GameDeck{
+			{DeckID: mine.ID, Player: "tester"},
+			{DeckID: other.ID},
+			{DeckID: opponent.ID},
+		},
+	})
+
+	for name, tc := range map[string]struct {
+		filters GameFilters
+		want    int
+	}{
+		"by deck":           {GameFilters{DeckID: opponent.ID}, 2},
+		"by other deck":     {GameFilters{DeckID: other.ID}, 1},
+		"by player":         {GameFilters{Player: "tester"}, 2},
+		"by unknown":        {GameFilters{DeckID: 999999}, 0},
+		"from a date":       {GameFilters{From: "2026-03-01"}, 1},
+		"to a date":         {GameFilters{To: "2026-03-01"}, 1},
+		"a range":           {GameFilters{From: "2026-01-01", To: "2026-12-31"}, 2},
+		"outside a range":   {GameFilters{From: "2027-01-01"}, 0},
+		"first page":        {GameFilters{Limit: 1}, 1},
+		"second page":       {GameFilters{Limit: 1, Page: 2}, 1},
+		"page past the end": {GameFilters{Page: 5}, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			games, err := store.Game().List(ctx, tc.filters)
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(games) != tc.want {
+				t.Errorf("games = %d, want %d", len(games), tc.want)
+			}
+		})
+	}
+}
+
+// TestGameRepository_Create_UnknownDeck is the error the API maps to 400: the only
+// foreign key a participation can break is deck_id, and it must not surface as a
+// driver error.
+func TestGameRepository_Create_UnknownDeck(t *testing.T) {
+	store := newTestStore(t)
+	deck := mustCreateDeck(t, store, "My Deck", "tester", "control")
+
+	_, err := store.Game().Create(context.Background(), &model.Game{
+		PlayedAt: "2026-02-07",
+		Decks:    []*model.GameDeck{{DeckID: deck.ID}, {DeckID: 999999}},
+	})
+	if !errors.Is(err, edherrors.ErrDeckNotFound) {
+		t.Errorf("error = %v, want it to wrap edherrors.ErrDeckNotFound", err)
+	}
+}
