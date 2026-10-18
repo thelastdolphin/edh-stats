@@ -19,6 +19,7 @@ import (
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/health"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/patchdeck"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/patchgame"
+	"github.com/thelastdolphin/edh-stats/internal/app/metrics"
 	"github.com/thelastdolphin/edh-stats/internal/app/storage"
 )
 
@@ -53,6 +54,10 @@ func New(ctx context.Context, cfg Config) (*Application, error) {
 		return nil, fmt.Errorf("couldn't create storage: %w", err)
 	}
 
+	// The registry is created here, so the application owns its metrics instead of
+	// relying on a process-wide one that tests would share.
+	serviceMetrics := metrics.New()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /decks", create.Deck(store))
 	mux.HandleFunc("GET /decks", getdeck.ListDecks(store))
@@ -67,14 +72,20 @@ func New(ctx context.Context, cfg Config) (*Application, error) {
 	mux.HandleFunc("PATCH /games/{id}/decks/{deckID}", patchgame.Participant(store))
 	mux.HandleFunc("GET /stats/decks", getstats.DeckStats(store))
 	mux.HandleFunc("GET /health", health.Health(store))
+	// Behind the same token as everything else: a scrape config sends the header.
+	mux.Handle("GET /metrics", serviceMetrics.Handler())
 
 	// There is deliberately no catch-all "/" route any more: it answered 200 to
 	// every unknown path, which also swallowed wrong methods and typos in URLs.
 	// ServeMux itself replies 404 for unknown paths and 405 with an Allow header
 	// when the path exists but the method does not.
 	server := &http.Server{
-		Addr:              cfg.ServerAddress,
-		Handler:           httpUtils.LogRequests(httpUtils.RequireToken(cfg.APIToken, mux)),
+		Addr: cfg.ServerAddress,
+		// Logging wraps the metrics, and the metrics wrap the token check, so that
+		// rejected requests are counted too; the route label comes from the mux, which
+		// is why the middleware sits above it.
+		Handler: httpUtils.LogRequests(serviceMetrics.Middleware(
+			httpUtils.RequireToken(cfg.APIToken, mux))),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
