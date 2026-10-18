@@ -7,20 +7,20 @@ import (
 	"time"
 )
 
-// statusRecorder captures the status code for the access log.
-type statusRecorder struct {
+// StatusRecorder captures the status code for the access log.
+type StatusRecorder struct {
 	http.ResponseWriter
-	status int
+	Status int
 }
 
-func (r *statusRecorder) WriteHeader(status int) {
-	r.status = status
+func (r *StatusRecorder) WriteHeader(status int) {
+	r.Status = status
 	r.ResponseWriter.WriteHeader(status)
 }
 
-func (r *statusRecorder) Write(body []byte) (int, error) {
-	if r.status == 0 {
-		r.status = http.StatusOK
+func (r *StatusRecorder) Write(body []byte) (int, error) {
+	if r.Status == 0 {
+		r.Status = http.StatusOK
 	}
 	return r.ResponseWriter.Write(body)
 }
@@ -36,14 +36,14 @@ func (r *statusRecorder) Write(body []byte) (int, error) {
 func LogRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		recorder := &statusRecorder{ResponseWriter: w}
+		recorder := &StatusRecorder{ResponseWriter: w}
 
 		next.ServeHTTP(recorder, r)
 
-		if recorder.status == 0 {
-			recorder.status = http.StatusOK
+		if recorder.Status == 0 {
+			recorder.Status = http.StatusOK
 		}
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, recorder.status,
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, recorder.Status,
 			time.Since(start).Round(time.Millisecond))
 	})
 }

@@ -111,6 +111,40 @@ assembled without emulation. CI does the same in two steps (`build-binary`, then
 `linux/arm64`, which is what the deploy host pulls; to publish both architectures,
 add `linux/amd64` to `platforms` in `.woodpecker/build.yaml`.
 
+## Monitoring
+
+`GET /metrics` serves the Prometheus text format: requests counted by method, route
+and status, how long they take, and the Go runtime and process collectors that come
+with the client library. The route label is the routing pattern (`/decks/{id}`), not
+the path, so the number of series stays bounded however many decks exist.
+
+The endpoint is behind the same bearer token as the rest of the API, so the scrape
+config carries it:
+
+```yaml
+scrape_configs:
+  - job_name: edh-stats
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["192.168.88.141:8080"]
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/edh-stats-token
+```
+
+With no `API_TOKEN` set on the service the header is simply ignored and the endpoint
+is open, like everything else.
+
+Worth putting on a dashboard:
+
+| Query | What it shows |
+|---|---|
+| `sum(rate(edh_stats_http_requests_total[5m]))` | requests per second |
+| `sum by (route) (rate(edh_stats_http_requests_total{status=~"5.."}[5m]))` | server errors per route |
+| `histogram_quantile(0.95, sum by (le) (rate(edh_stats_http_request_duration_seconds_bucket[5m])))` | p95 latency |
+| `sum by (status) (rate(edh_stats_http_requests_total[15m]))` | the mix of status codes |
+| `go_goroutines`, `process_resident_memory_bytes` | the usual runtime health |
+
 ## Deployment
 
 `.woodpecker/build.yaml` publishes the image to `registry.wdpkr.home` and then
