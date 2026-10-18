@@ -41,12 +41,12 @@ func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 	// sql.Open is lazy, so ping here to surface an invalid path or a missing
 	// directory at startup instead of on the first request.
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("connect to sqlite database %q: %w", dbPath, err)
 	}
 
 	if err := migrate(ctx, db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 

@@ -30,7 +30,7 @@ func TestMigrate_UpgradesPopulatedDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	goose.SetBaseFS(migrations.FS)
 	if err := goose.SetDialect(dialect); err != nil {

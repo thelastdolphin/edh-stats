@@ -73,6 +73,23 @@ make run        # go run ./cmd/edh-stats
 make build-arm64  # cross-compiled Linux/arm64 binary (see the Makefile for the toolchain package)
 ```
 
+## Quality checks
+
+```sh
+make lint       # golangci-lint, the standard linter set, pinned by the Makefile
+make vulncheck  # govulncheck over the dependencies the code actually calls
+make e2e        # the real binary, started and driven over HTTP
+```
+
+`make lint` and `make vulncheck` gate the CI build: a finding fails it. So does
+`make e2e`, but deliberately without gating the deploy - the image and the deployment
+path stay independent of it. To make the end-to-end test a gate as well, add `e2e` to
+the `depends_on` of the `deploy` step; a broken build then cannot reach production.
+
+`make e2e` builds the binary itself, so nothing has to be prepared in advance. The
+end-to-end tests live in `e2e/` behind the `e2e` build tag, which is what keeps
+`make test` fast.
+
 ## Container images
 
 The `Dockerfile` only *assembles* the image: it copies `edh-stats` and
