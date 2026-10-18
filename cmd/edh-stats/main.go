@@ -103,7 +103,7 @@ func healthcheck() error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<10))
 	if err != nil {

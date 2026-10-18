@@ -126,7 +126,7 @@ func (dr *DeckRepository) List(ctx context.Context, filters DeckFilters) ([]*mod
 	if err != nil {
 		return nil, fmt.Errorf("select decks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Start from an empty slice so an empty result is encoded as [] rather than
 	// null, which is easier for API clients to consume.

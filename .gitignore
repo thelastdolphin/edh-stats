@@ -4,6 +4,7 @@
 /.idea
 /edh-stats
 /data
+/.tools
 
 # Private keys must never be committed: the deployment pipeline authenticates
 # over SSH, and these files used to sit in the repository root without being

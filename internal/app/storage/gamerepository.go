@@ -150,7 +150,7 @@ func (gr *GameRepository) List(ctx context.Context, filters GameFilters) ([]*mod
 	if err != nil {
 		return nil, fmt.Errorf("select games: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Start from an empty slice so an empty result is encoded as [] rather than null.
 	games := make([]*model.Game, 0, filters.Limit)
@@ -201,7 +201,7 @@ func (gr *GameRepository) loadParticipants(ctx context.Context, games []*model.G
 	if err != nil {
 		return fmt.Errorf("select participants: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var (
@@ -315,7 +315,7 @@ func (gr *GameRepository) ResultTypeIDs(ctx context.Context) (map[string]int64, 
 	if err != nil {
 		return nil, fmt.Errorf("select result types: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	ids := make(map[string]int64, 3)
 	for rows.Next() {

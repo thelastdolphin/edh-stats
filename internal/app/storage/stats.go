@@ -47,7 +47,7 @@ func (gr *GameRepository) DeckStats(ctx context.Context, filters StatsFilters) (
 	if err != nil {
 		return nil, fmt.Errorf("select deck statistics: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// A non-nil slice so that an empty result encodes as [] rather than null.
 	stats := make([]*model.DeckStats, 0, 16)

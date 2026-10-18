@@ -2,6 +2,13 @@ BINARY := edh-stats
 PKG := ./cmd/edh-stats
 IMAGE := edh-stats
 
+# Quality tools are pinned: a version that moves on its own is a build that turns
+# red on a Tuesday for no reason. Both are fetched on demand, never installed
+# globally and never into the image.
+GOLANGCI_LINT_VERSION := v2.15.0
+GOVULNCHECK_VERSION := v1.9.0
+TOOLS_DIR := .tools
+
 .DEFAULT_GOAL := build
 
 .PHONY: build
@@ -62,3 +69,39 @@ image-arm64: build-arm64
 .PHONY: image-amd64
 image-amd64: build
 	docker buildx build --platform linux/amd64 -t $(IMAGE):amd64 --load .
+
+# Static analysis. The linter is the official release binary for this
+# architecture: building golangci-lint from source takes minutes, and on the
+# four-core deployment host it is exactly the cold, parallel compile that machine
+# has failed at before.
+.PHONY: lint
+lint:
+	@set -e; \
+	version=$(GOLANGCI_LINT_VERSION); bare=$${version#v}; \
+	arch=$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
+	bin=$(TOOLS_DIR)/golangci-lint-$$bare; \
+	if [ ! -x "$$bin" ]; then \
+		echo "downloading golangci-lint $$version for $$arch"; \
+		mkdir -p $(TOOLS_DIR); \
+		curl -sSfL -o $(TOOLS_DIR)/lint.tgz \
+			"https://github.com/golangci/golangci-lint/releases/download/$$version/golangci-lint-$$bare-linux-$$arch.tar.gz"; \
+		tar -xzf $(TOOLS_DIR)/lint.tgz -C $(TOOLS_DIR); \
+		mv $(TOOLS_DIR)/golangci-lint-$$bare-linux-$$arch/golangci-lint "$$bin"; \
+		rm -rf $(TOOLS_DIR)/lint.tgz $(TOOLS_DIR)/golangci-lint-$$bare-linux-$$arch; \
+	fi; \
+	"$$bin" run --concurrency 2
+
+# Vulnerabilities in the dependencies the code actually calls. It needs the network
+# because the database lives at vuln.go.dev, so a new advisory can turn this red
+# without a commit - which is the point of a security gate.
+.PHONY: vulncheck
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+# End-to-end: builds the real binary, starts it as a process and talks to it over
+# HTTP. Behind the e2e build tag, so `make test` stays fast and the end-to-end test
+# never runs by accident.
+.PHONY: e2e
+e2e:
+	go vet -tags e2e ./...
+	go test -tags e2e -count=1 -timeout 120s ./e2e/

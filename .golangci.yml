@@ -1,0 +1,35 @@
+# golangci-lint configuration.
+#
+# The version is pinned by the Makefile and by the CI step, not here: the config format
+# and the linter set change between major versions, so the two must move together.
+version: "2"
+
+run:
+  timeout: 5m
+  # The end-to-end test compiles the binary and starts a process, which is not what a
+  # linter should be waiting for; `make e2e` vets it with the tag instead.
+  build-tags: []
+
+linters:
+  # The standard set is errcheck, govet, ineffassign, staticcheck and unused. That is
+  # the useful part of what golangci-lint offers; every extra linter is another way for
+  # a green build to turn red over taste, so the set stays as it is until something
+  # specific is missed.
+  default: standard
+
+  settings:
+    errcheck:
+      # Printing to the console is the one class of write whose error cannot be acted
+      # on: the report of the import tool goes to stdout for a human to read. Everything
+      # else - closing rows, closing a database - stays checked in the code.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+  exclusions:
+    rules:
+      # Tests may ignore the errors of their own fixtures; production code may not.
+      - path: _test\.go
+        linters:
+          - errcheck

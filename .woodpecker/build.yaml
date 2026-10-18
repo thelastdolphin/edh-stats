@@ -35,6 +35,24 @@ steps:
     volumes:
       - /var/lib/woodpecker/cache/go:/woodpecker/cache
 
+  # Static analysis. Both tools are pinned in the Makefile and fetched on demand, so
+  # the step runs the same commands a developer runs; the build cache volume keeps
+  # govulncheck from recompiling on every push.
+  - name: static-analysis
+    image: golang:1.27.2
+    environment:
+      GOCACHE: /woodpecker/cache/go-build
+      GOMODCACHE: /woodpecker/cache/go-mod
+      GOMAXPROCS: "2"
+      CGO_ENABLED: "1"
+    commands:
+      - make lint
+      - make vulncheck
+    volumes:
+      - /var/lib/woodpecker/cache/go:/woodpecker/cache
+    depends_on:
+      - vet-and-test
+
   # The binary is compiled here, in a plain container against the persistent Go
   # cache, exactly as before the refactor. Compiling it inside the image instead
   # (a cold standard-library build inside the plugin's nested dockerd) is what made
@@ -56,6 +74,23 @@ steps:
       - /var/lib/woodpecker/cache/go:/woodpecker/cache
     depends_on:
       - vet-and-test
+
+  # The end-to-end test: the real binary, started and driven over HTTP. It runs as
+  # soon as the binary exists, in parallel with the image build, and it deliberately
+  # does not gate the deploy - add "e2e" to the deploy's depends_on to make it a gate.
+  - name: e2e
+    image: golang:1.27.2
+    environment:
+      GOCACHE: /woodpecker/cache/go-build
+      GOMODCACHE: /woodpecker/cache/go-mod
+      GOMAXPROCS: "2"
+      CGO_ENABLED: "1"
+    commands:
+      - make e2e
+    volumes:
+      - /var/lib/woodpecker/cache/go:/woodpecker/cache
+    depends_on:
+      - build-binary
 
   # Only assembles the image out of the binary built above: no compiler, no apt, no
   # cache export, nothing heavy on the Pi.
