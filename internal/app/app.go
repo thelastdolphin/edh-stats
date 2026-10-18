@@ -85,7 +85,7 @@ func New(ctx context.Context, cfg Config) (*Application, error) {
 		// rejected requests are counted too; the route label comes from the mux, which
 		// is why the middleware sits above it.
 		Handler: httpUtils.LogRequests(serviceMetrics.Middleware(
-			httpUtils.RequireToken(cfg.APIToken, mux))),
+			httpUtils.RequireToken(cfg.APIToken, httpUtils.ETag(mux)))),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
