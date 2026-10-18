@@ -91,12 +91,22 @@ lint:
 	fi; \
 	"$$bin" run --concurrency 2
 
-# Vulnerabilities in the dependencies the code actually calls. It needs the network
-# because the database lives at vuln.go.dev, so a new advisory can turn this red
-# without a commit - which is the point of a security gate.
+# Vulnerabilities in the dependencies. It needs the network because the database lives at
+# vuln.go.dev, so a new advisory can turn this red without a commit - which is the point of
+# a security gate.
+#
+# -scan=module asks the database about the dependencies themselves, not about the symbols
+# this code reaches. The symbol scan is the better analysis, but it builds SSA through
+# golang.org/x/tools, and on the arm64 runner that segfaults inside it before the scan
+# begins:
+#   SIGSEGV in golang.org/x/tools/go/ssa.(*UnOp).Operands, x/tools v0.52.0
+# Module scanning avoids that path and still answers the question this project cares
+# about: is anything we depend on known to be vulnerable. It takes the module it is run
+# in, not a package pattern, so the target steps into the package first. Switch back to
+# the default once a newer x/vuln pulls a fixed x/tools.
 .PHONY: vulncheck
 vulncheck:
-	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	cd $(PKG) && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) -scan=module
 
 # End-to-end: builds the real binary, starts it as a process and talks to it over
 # HTTP. Behind the e2e build tag, so `make test` stays fast and the end-to-end test
