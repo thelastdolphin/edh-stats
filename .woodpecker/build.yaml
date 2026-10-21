@@ -15,7 +15,7 @@ steps:
   # and warms the shared GOCACHE volume; build-binary then runs incrementally as
   # before. Costs time only while the cache is cold.
   - name: vet-and-test
-    image: golang:1.27.2
+    image: golang:1.27.3
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod
@@ -39,7 +39,7 @@ steps:
   # the step runs the same commands a developer runs; the build cache volume keeps
   # govulncheck from recompiling on every push.
   - name: static-analysis
-    image: golang:1.27.2
+    image: golang:1.27.3
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod
@@ -61,7 +61,7 @@ steps:
   # GOGC/GOMAXPROCS come from the original step: the host has four cores and 4 GB,
   # and GC off for a short-lived compiler avoids spending that budget on collection.
   - name: build-binary
-    image: golang:1.27.2
+    image: golang:1.27.3
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod
@@ -79,7 +79,7 @@ steps:
   # soon as the binary exists, in parallel with the image build, and it deliberately
   # does not gate the deploy - add "e2e" to the deploy's depends_on to make it a gate.
   - name: e2e
-    image: golang:1.27.2
+    image: golang:1.27.3
     environment:
       GOCACHE: /woodpecker/cache/go-build
       GOMODCACHE: /woodpecker/cache/go-mod
