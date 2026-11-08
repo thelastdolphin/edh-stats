@@ -17,6 +17,7 @@ import (
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/getgame"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/getstats"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/health"
+	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/mergedeck"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/patchdeck"
 	"github.com/thelastdolphin/edh-stats/internal/app/http/handler/patchgame"
 	"github.com/thelastdolphin/edh-stats/internal/app/metrics"
@@ -64,6 +65,7 @@ func New(ctx context.Context, cfg Config) (*Application, error) {
 	mux.HandleFunc("GET /decks/{id}", getdeck.GetDeck(store))
 	mux.HandleFunc("PATCH /decks/{id}", patchdeck.Deck(store))
 	mux.HandleFunc("DELETE /decks/{id}", deletedeck.Deck(store))
+	mux.HandleFunc("POST /decks/{id}/merge", mergedeck.Deck(store))
 	mux.HandleFunc("POST /games", creategame.Game(store))
 	mux.HandleFunc("GET /games", getgame.ListGames(store))
 	mux.HandleFunc("GET /games/{id}", getgame.GetGame(store))

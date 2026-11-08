@@ -359,3 +359,51 @@ func nullIfEmpty(value string) any {
 	}
 	return value
 }
+
+// MoveParticipant records a participation under a different deck.
+//
+// Fixing which deck a game was played with should not mean deleting the game and typing it
+// again: the result, the notes and the other players are already right. Moving onto a deck
+// that already takes part in the same game is refused, because the schema allows a deck
+// once per game and a merge of the two would lose a participant.
+func (gr *GameRepository) MoveParticipant(ctx context.Context, gameID, fromDeckID, toDeckID int64) error {
+	if fromDeckID == toDeckID {
+		return nil
+	}
+
+	var decks int
+	if err := gr.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM decks WHERE id = ?`, toDeckID).Scan(&decks); err != nil {
+		return fmt.Errorf("read deck %d: %w", toDeckID, err)
+	}
+	if decks == 0 {
+		return fmt.Errorf("move participant to deck %d: %w", toDeckID, edherrors.ErrDeckNotFound)
+	}
+
+	var clashes int
+	if err := gr.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM game_deck WHERE game_id = ? AND deck_id = ?`,
+		gameID, toDeckID).Scan(&clashes); err != nil {
+		return fmt.Errorf("look for deck %d in game %d: %w", toDeckID, gameID, err)
+	}
+	if clashes > 0 {
+		return fmt.Errorf("move participant to deck %d: %w", toDeckID, edherrors.ErrDeckAlreadyInGame)
+	}
+
+	result, err := gr.db.ExecContext(ctx,
+		`UPDATE game_deck SET deck_id = ? WHERE game_id = ? AND deck_id = ?`,
+		toDeckID, gameID, fromDeckID)
+	if err != nil {
+		return fmt.Errorf("move participant of game %d from deck %d to %d: %w",
+			gameID, fromDeckID, toDeckID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count moved participants: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("move participant of game %d from deck %d: %w",
+			gameID, fromDeckID, edherrors.ErrParticipantNotFound)
+	}
+	return nil
+}
