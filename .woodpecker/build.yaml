@@ -5,20 +5,26 @@ when:
   - event: manual
 
 steps:
-  # Verification, and the step that pays for a cold cache.
+  # Verification, with a cache of its own.
   #
-  # GOFLAGS=-p=1 builds one package at a time, for both commands below. A *cold*
-  # full standard-library build is the one operation this host has repeatedly
-  # failed at (internal compiler errors, garbage relocations), and every toolchain
-  # change forces one, because the build cache is keyed by the toolchain.
-  # Incremental builds have never failed here, so the first step compiles serially
-  # and warms the shared GOCACHE volume; build-binary then runs incrementally as
-  # before. Costs time only while the cache is cold.
+  # The four Go steps used to share /var/lib/woodpecker/cache/go, warmed once so that a
+  # toolchain change would not force a cold standard-library build on this host. That
+  # sharing became the problem: three runs in a row failed with pkgbits assertion, then
+  # flate corruption, then a SIGSEGV inside the compiler, and afterwards the same module
+  # archives verified clean on disk (unzip -t: no errors). All three are reads of data that
+  # was being written - the signature of overlapping pipelines sharing one cache directory.
+  #
+  # So each container now keeps its cache to itself: no shared directory, nothing to
+  # overlap. The price is a cold build per step (GOFLAGS=-p=1 keeps that serial, and this
+  # host is known to fail cold builds only when they run in parallel with other work).
+  # Revisit once we know why a warm cache produced corrupted reads here; until then this
+  # step is slower on purpose.
+  #
   - name: vet-and-test
     image: golang:1.27.3
     environment:
-      GOCACHE: /woodpecker/cache/go-build
-      GOMODCACHE: /woodpecker/cache/go-mod
+      GOCACHE: /tmp/go-build
+      GOMODCACHE: /tmp/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
       GOFLAGS: "-p=1"
@@ -32,8 +38,6 @@ steps:
       # That is a kernel/runtime limitation, not a failing test. Run `make
       # test-race` on a machine whose kernel the detector supports.
       - go test -count=1 -timeout 60s ./...
-    volumes:
-      - /var/lib/woodpecker/cache/go:/woodpecker/cache
 
   # Static analysis. Both tools are pinned in the Makefile and fetched on demand, so
   # the step runs the same commands a developer runs; the build cache volume keeps
@@ -41,15 +45,13 @@ steps:
   - name: static-analysis
     image: golang:1.27.3
     environment:
-      GOCACHE: /woodpecker/cache/go-build
-      GOMODCACHE: /woodpecker/cache/go-mod
+      GOCACHE: /tmp/go-build
+      GOMODCACHE: /tmp/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
     commands:
       - make lint
       - make vulncheck
-    volumes:
-      - /var/lib/woodpecker/cache/go:/woodpecker/cache
     depends_on:
       - vet-and-test
 
@@ -63,15 +65,13 @@ steps:
   - name: build-binary
     image: golang:1.27.3
     environment:
-      GOCACHE: /woodpecker/cache/go-build
-      GOMODCACHE: /woodpecker/cache/go-mod
+      GOCACHE: /tmp/go-build
+      GOMODCACHE: /tmp/go-mod
       GOGC: "off"
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
     commands:
       - go build -o edh-stats ./cmd/edh-stats
-    volumes:
-      - /var/lib/woodpecker/cache/go:/woodpecker/cache
     depends_on:
       - vet-and-test
 
@@ -81,14 +81,12 @@ steps:
   - name: e2e
     image: golang:1.27.3
     environment:
-      GOCACHE: /woodpecker/cache/go-build
-      GOMODCACHE: /woodpecker/cache/go-mod
+      GOCACHE: /tmp/go-build
+      GOMODCACHE: /tmp/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
     commands:
       - make e2e
-    volumes:
-      - /var/lib/woodpecker/cache/go:/woodpecker/cache
     depends_on:
       - build-binary
 
