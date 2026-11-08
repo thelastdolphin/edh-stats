@@ -50,13 +50,16 @@ steps:
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
     commands:
+      # A cold cache means the linter would compile everything itself under its own
+      # deadline. Compiling first, with the same toolchain, turns that into a queue
+      # of cache hits - and fails earlier and more clearly if the code does not build.
+      - go build ./...
       - make lint
       - make vulncheck
     depends_on:
       - vet-and-test
 
-  # The binary is compiled here, in a plain container against the persistent Go
-  # cache, exactly as before the refactor. Compiling it inside the image instead
+  # The binary is compiled here, in a plain container against its own cache. Compiling it inside the image instead
   # (a cold standard-library build inside the plugin's nested dockerd) is what made
   # builds fail on this machine, so that is not done any more.
   #

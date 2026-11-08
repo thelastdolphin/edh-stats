@@ -89,7 +89,7 @@ lint:
 		mv $(TOOLS_DIR)/golangci-lint-$$bare-linux-$$arch/golangci-lint "$$bin"; \
 		rm -rf $(TOOLS_DIR)/lint.tgz $(TOOLS_DIR)/golangci-lint-$$bare-linux-$$arch; \
 	fi; \
-	"$$bin" run --concurrency 2
+	"$$bin" run --concurrency 2 --timeout 5m
 
 # Vulnerabilities in the dependencies. It needs the network because the database lives at
 # vuln.go.dev, so a new advisory can turn this red without a commit - which is the point of
