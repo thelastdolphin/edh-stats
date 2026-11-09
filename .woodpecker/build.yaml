@@ -29,6 +29,9 @@ steps:
       CGO_ENABLED: "1"
       GOFLAGS: "-p=1"
     commands:
+      # A module cache can go bad; this turns that into one clear error instead of a
+      # compiler that crashes inside a random package.
+      - go mod verify
       - go vet ./...
       # No -race here on purpose. The deploy host doubles as the CI agent, it is
       # arm64 and its kernel uses a 39-bit virtual address layout, which
@@ -49,6 +52,7 @@ steps:
       GOMODCACHE: /tmp/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
+      GOFLAGS: "-p=1"
     commands:
       # A cold cache means the linter would compile everything itself under its own
       # deadline. Compiling first, with the same toolchain, turns that into a queue
@@ -70,9 +74,9 @@ steps:
     environment:
       GOCACHE: /tmp/go-build
       GOMODCACHE: /tmp/go-mod
-      GOGC: "off"
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
+      GOFLAGS: "-p=1"
     commands:
       - go build -o edh-stats ./cmd/edh-stats
     depends_on:
@@ -88,6 +92,7 @@ steps:
       GOMODCACHE: /tmp/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
+      GOFLAGS: "-p=1"
     commands:
       - make e2e
     depends_on:

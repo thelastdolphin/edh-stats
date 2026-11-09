@@ -235,3 +235,65 @@ func isForeignKeyViolation(err error) bool {
 	}
 	return sqliteErr.Code == sqlite3.ErrConstraint
 }
+
+// Merge moves every game of fromID onto intoID and deletes fromID.
+//
+// A merge is a repair, not a feature. Duplicates come from names typed by hand, and the
+// point of merging them is that the statistics of one deck stop being split across two
+// rows. The move and the delete run in one transaction: a failure leaves both decks as
+// they were, because half a merge would be worse than none.
+//
+// A game that already has both decks cannot take the source rows - the same deck twice in
+// one game is what the schema forbids - and is reported instead of quietly dropping a
+// participant.
+func (dr *DeckRepository) Merge(ctx context.Context, fromID, intoID int64) (int, error) {
+	if fromID == intoID {
+		return 0, fmt.Errorf("merge deck %d: %w", fromID, edherrors.ErrDeckMergeIntoItself)
+	}
+
+	tx, err := dr.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin merge transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var decks int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT count(*) FROM decks WHERE id IN (?, ?)`, fromID, intoID).Scan(&decks); err != nil {
+		return 0, fmt.Errorf("read decks %d and %d: %w", fromID, intoID, err)
+	}
+	if decks != 2 {
+		return 0, fmt.Errorf("merge deck %d into %d: %w", fromID, intoID, edherrors.ErrDeckNotFound)
+	}
+
+	var clashes int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM game_deck source
+		JOIN game_deck target ON target.game_id = source.game_id AND target.deck_id = ?
+		WHERE source.deck_id = ?`, intoID, fromID).Scan(&clashes); err != nil {
+		return 0, fmt.Errorf("look for games holding both decks: %w", err)
+	}
+	if clashes > 0 {
+		return 0, fmt.Errorf("merge deck %d into %d: %w", fromID, intoID, edherrors.ErrDeckAlreadyInGame)
+	}
+
+	result, err := tx.ExecContext(ctx,
+		`UPDATE game_deck SET deck_id = ? WHERE deck_id = ?`, intoID, fromID)
+	if err != nil {
+		return 0, fmt.Errorf("move games from deck %d to %d: %w", fromID, intoID, err)
+	}
+	moved, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count moved games: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM decks WHERE id = ?`, fromID); err != nil {
+		return 0, fmt.Errorf("delete merged deck %d: %w", fromID, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit merge of deck %d into %d: %w", fromID, intoID, err)
+	}
+	return int(moved), nil
+}

@@ -24,6 +24,10 @@ var (
 	// game twice.
 	ErrDeckAlreadyInGame = errors.New("deck is already part of the game")
 
+	// ErrDeckMergeIntoItself is returned when a merge names the same deck on both
+	// sides, which would delete the deck it was meant to keep.
+	ErrDeckMergeIntoItself = errors.New("a deck cannot be merged into itself")
+
 	// ErrGameNotFound is returned when a game lookup matched no row.
 	ErrGameNotFound = errors.New("game not found")
 

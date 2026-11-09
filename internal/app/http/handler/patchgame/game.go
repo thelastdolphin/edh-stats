@@ -110,6 +110,30 @@ func Participant(store *storage.Store) http.HandlerFunc {
 			return
 		}
 
+		// The participation may be moved to another deck before its values are written: the
+		// row is the same row, it just belongs to a different deck afterwards.
+		if req.DeckID != nil {
+			if err := store.Game().MoveParticipant(r.Context(), gameID, deckID, *req.DeckID); err != nil {
+				switch {
+				case errors.Is(err, edherrors.ErrParticipantNotFound):
+					httpUtils.Error(w, http.StatusNotFound, httpUtils.CodeParticipantNotFound,
+						"the deck does not take part in the game")
+				case errors.Is(err, edherrors.ErrDeckNotFound):
+					httpUtils.Error(w, http.StatusNotFound, httpUtils.CodeUnknownDeck,
+						"the deck to move to does not exist")
+				case errors.Is(err, edherrors.ErrDeckAlreadyInGame):
+					httpUtils.Error(w, http.StatusConflict, httpUtils.CodeDuplicateParticipant,
+						"the game already has that deck")
+				default:
+					log.Printf("move deck %d in game %d to deck %d: %v",
+						deckID, gameID, *req.DeckID, err)
+					httpUtils.Error(w, http.StatusInternalServerError, httpUtils.CodeInternal, "internal error")
+				}
+				return
+			}
+			deckID = *req.DeckID
+		}
+
 		player := participant.Player
 		if req.Player != nil {
 			player = *req.Player

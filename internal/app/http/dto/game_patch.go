@@ -62,6 +62,12 @@ func (r PatchGameRequest) Apply(game *model.Game) {
 type PatchGameDeckRequest struct {
 	Player *string `json:"player"`
 	Result *string `json:"result"`
+
+	// DeckID records the participation under a different deck. It exists because the deck
+	// a game was played with can be recorded wrongly - a duplicate created by a typed name,
+	// a deck that turned out to be somebody else's - and the fix should not be deleting the
+	// game and typing all of it again.
+	DeckID *int64 `json:"deck_id"`
 }
 
 // Normalize trims the fields the request carries, and lower-cases the result so that
@@ -77,8 +83,12 @@ func (r *PatchGameDeckRequest) Normalize() {
 
 // Validate reports the first problem found in the payload.
 func (r PatchGameDeckRequest) Validate() error {
-	if r.Player == nil && r.Result == nil {
-		return errors.New("provide at least one of player or result")
+	if r.Player == nil && r.Result == nil && r.DeckID == nil {
+		return errors.New("provide at least one of player, result or deck_id")
+	}
+
+	if r.DeckID != nil && *r.DeckID < 1 {
+		return errors.New("deck_id must be a positive integer")
 	}
 
 	if r.Player != nil && utf8.RuneCountInString(*r.Player) > MaxPlayerLen {
