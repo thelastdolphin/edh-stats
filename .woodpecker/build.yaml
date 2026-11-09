@@ -5,29 +5,28 @@ when:
   - event: manual
 
 steps:
-  # Verification, with a cache of its own.
+  # Verification. Module downloads are shared, compilation is not.
   #
-  # The four Go steps used to share /var/lib/woodpecker/cache/go, warmed once so that a
-  # toolchain change would not force a cold standard-library build on this host. That
-  # sharing became the problem: three runs in a row failed with pkgbits assertion, then
-  # flate corruption, then a SIGSEGV inside the compiler, and afterwards the same module
-  # archives verified clean on disk (unzip -t: no errors). All three are reads of data that
-  # was being written - the signature of overlapping pipelines sharing one cache directory.
+  # A cold standard-library build is the operation this host has failed at, and four of
+  # them run on every push. The module cache is the part worth sharing: a downloaded
+  # archive never changes, so several steps reading one copy is safe, and it is what stops
+  # every step from pulling the same ~250 MB again. go mod verify opens the step so a
+  # damaged archive is one clear error rather than a compiler crash in a random package.
   #
-  # So each container now keeps its cache to itself: no shared directory, nothing to
-  # overlap. The price is a cold build per step (GOFLAGS=-p=1 keeps that serial, and this
-  # host is known to fail cold builds only when they run in parallel with other work).
-  # Revisit once we know why a warm cache produced corrupted reads here; until then this
-  # step is slower on purpose.
+  # The build cache stays inside the container. That is the directory that produced the
+  # pkgbits assertion, the flate corruption and the SIGSEGV in three consecutive runs, and
+  # the one place where two processes could write over each other.
   #
   - name: vet-and-test
     image: golang:1.27.3
     environment:
       GOCACHE: /tmp/go-build
-      GOMODCACHE: /tmp/go-mod
+      GOMODCACHE: /woodpecker/cache/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
       GOFLAGS: "-p=1"
+    volumes:
+      - /var/lib/woodpecker/cache/go:/woodpecker/cache
     commands:
       # A module cache can go bad; this turns that into one clear error instead of a
       # compiler that crashes inside a random package.
@@ -49,10 +48,12 @@ steps:
     image: golang:1.27.3
     environment:
       GOCACHE: /tmp/go-build
-      GOMODCACHE: /tmp/go-mod
+      GOMODCACHE: /woodpecker/cache/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
       GOFLAGS: "-p=1"
+    volumes:
+      - /var/lib/woodpecker/cache/go:/woodpecker/cache
     commands:
       # A cold cache means the linter would compile everything itself under its own
       # deadline. Compiling first, with the same toolchain, turns that into a queue
@@ -73,10 +74,12 @@ steps:
     image: golang:1.27.3
     environment:
       GOCACHE: /tmp/go-build
-      GOMODCACHE: /tmp/go-mod
+      GOMODCACHE: /woodpecker/cache/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
       GOFLAGS: "-p=1"
+    volumes:
+      - /var/lib/woodpecker/cache/go:/woodpecker/cache
     commands:
       - go build -o edh-stats ./cmd/edh-stats
     depends_on:
@@ -89,10 +92,12 @@ steps:
     image: golang:1.27.3
     environment:
       GOCACHE: /tmp/go-build
-      GOMODCACHE: /tmp/go-mod
+      GOMODCACHE: /woodpecker/cache/go-mod
       GOMAXPROCS: "2"
       CGO_ENABLED: "1"
       GOFLAGS: "-p=1"
+    volumes:
+      - /var/lib/woodpecker/cache/go:/woodpecker/cache
     commands:
       - make e2e
     depends_on:
