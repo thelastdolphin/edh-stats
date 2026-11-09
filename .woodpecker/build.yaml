@@ -7,8 +7,9 @@ when:
 steps:
   # Verification. Module downloads are shared, compilation is not.
   #
-  # A cold standard-library build is the operation this host has failed at, and four of
-  # them run on every push. The module cache is the part worth sharing: a downloaded
+  # A cold standard-library build is the operation this host has failed at, and three of
+  # them ran on every push - two of those were the same build done twice. The module
+  # cache is the part worth sharing: a downloaded
   # archive never changes, so several steps reading one copy is safe, and it is what stops
   # every step from pulling the same ~250 MB again. go mod verify opens the step so a
   # damaged archive is one clear error rather than a compiler crash in a random package.
@@ -17,7 +18,7 @@ steps:
   # pkgbits assertion, the flate corruption and the SIGSEGV in three consecutive runs, and
   # the one place where two processes could write over each other.
   #
-  - name: vet-and-test
+  - name: verify
     image: golang:1.27.3
     environment:
       GOCACHE: /tmp/go-build
@@ -49,50 +50,11 @@ steps:
       # That is a kernel/runtime limitation, not a failing test. Run `make
       # test-race` on a machine whose kernel the detector supports.
       - go test -count=1 -timeout 60s ./...
-
-  # Static analysis. Both tools are pinned in the Makefile and fetched on demand, so
-  # the step runs the same commands a developer runs; the build cache volume keeps
-  # govulncheck from recompiling on every push.
-  - name: static-analysis
-    image: golang:1.27.3
-    environment:
-      GOCACHE: /tmp/go-build
-      GOMODCACHE: /woodpecker/cache/go-mod
-      GOMAXPROCS: "2"
-      CGO_ENABLED: "1"
-      GOFLAGS: "-p=1"
-    volumes:
-      - /var/lib/woodpecker/cache/go:/woodpecker/cache
-    commands:
-      # A cold cache means the linter would compile everything itself under its own
-      # deadline. Compiling first, with the same toolchain, turns that into a queue
-      # of cache hits - and fails earlier and more clearly if the code does not build.
-      - go build ./...
+      # Same container, same cache: the linter and govulncheck build on top of the
+      # compile that just happened instead of paying for a second cold one.
+      - go build -o edh-stats ./cmd/edh-stats
       - make lint
       - make vulncheck
-    depends_on:
-      - vet-and-test
-
-  # The binary is compiled here, in a plain container against its own cache. Compiling it inside the image instead
-  # (a cold standard-library build inside the plugin's nested dockerd) is what made
-  # builds fail on this machine, so that is not done any more.
-  #
-  # GOGC/GOMAXPROCS come from the original step: the host has four cores and 4 GB,
-  # and GC off for a short-lived compiler avoids spending that budget on collection.
-  - name: build-binary
-    image: golang:1.27.3
-    environment:
-      GOCACHE: /tmp/go-build
-      GOMODCACHE: /woodpecker/cache/go-mod
-      GOMAXPROCS: "2"
-      CGO_ENABLED: "1"
-      GOFLAGS: "-p=1"
-    volumes:
-      - /var/lib/woodpecker/cache/go:/woodpecker/cache
-    commands:
-      - go build -o edh-stats ./cmd/edh-stats
-    depends_on:
-      - vet-and-test
 
   # The end-to-end test: the real binary, started and driven over HTTP. It runs as
   # soon as the binary exists, in parallel with the image build, and it deliberately
@@ -110,7 +72,7 @@ steps:
     commands:
       - make e2e
     depends_on:
-      - build-binary
+      - verify
 
   # Only assembles the image out of the binary built above: no compiler, no apt, no
   # cache export, nothing heavy on the Pi.
@@ -125,7 +87,7 @@ steps:
       # Target host is arm64. Add linux/amd64 to the list to publish both.
       platforms: linux/arm64
     depends_on:
-      - build-binary
+      - verify
 
   - name: deploy
     image: alpine
