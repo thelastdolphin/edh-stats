@@ -28,9 +28,18 @@ steps:
     volumes:
       - /var/lib/woodpecker/cache/go:/woodpecker/cache
     commands:
-      # A module cache can go bad; this turns that into one clear error instead of a
-      # compiler that crashes inside a random package.
-      - go mod verify
+      # The module cache is shared between pipelines, so a run killed mid-extraction can
+      # leave a directory that no longer matches its hash - which is exactly what the
+      # compiler crashed on before this check existed. Verifying first turns that into two
+      # named lines in the log; cleaning once turns it into a repaired cache instead of a
+      # red build that leaves the damage in place for every later run.
+      - |
+        if go mod verify; then
+          echo "module cache is intact"
+        else
+          echo "module cache is damaged, cleaning it - the next command downloads again"
+          go clean -modcache
+        fi
       - go vet ./...
       # No -race here on purpose. The deploy host doubles as the CI agent, it is
       # arm64 and its kernel uses a 39-bit virtual address layout, which
